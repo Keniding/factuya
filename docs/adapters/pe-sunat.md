@@ -23,6 +23,28 @@ SIRE quedan fuera de este build, tal como fija el alcance del MVP (SDD §2).
 - **Namespace del servicio**: `http://service.sunat.gob.pe` (prefijo convencional `ser`).
 - **Operación usada**: `sendBill(fileName: string, contentFile: base64)` → `sendBillResponse.applicationResponse` (ZIP del CDR, base64).
 
+### Hallazgo empírico: HTTP 401 con nginx delante del WS-Security (2026-07-31, corrida real de un usuario)
+
+Una primera corrida real de `sunat-beta.integration.test.ts` (fuera de este sandbox, con salida a
+internet normal) devolvió `HTTP 401` con cuerpo HTML genérico:
+
+```
+<html><head><title>401 Authorization Required</title></head>
+<body><center><h1>401 Authorization Required</h1></center>
+<hr><center>nginx/1.17.3</center></body></html>
+```
+
+Esa firma (HTML plano generado por nginx, no un SOAP Fault XML) es característica del módulo
+`auth_basic` de nginx actuando como gate HTTP delante del servicio, antes de que el WS-Security del
+body del SOAP siquiera se evalúe. `soap-client.ts` ahora también envía `Authorization: Basic
+base64(RUC+usuarioSOL:claveSOL)` con las mismas credenciales del WS-Security, además del
+`UsernameToken` en el header SOAP. **Esto es una corrección basada en evidencia empírica real,
+no confirmada de forma independiente contra documentación oficial** (no se encontró una fuente
+oficial que documente explícitamente este segundo nivel de autenticación) — pendiente de que una
+corrida real confirme si resuelve el 401 o si el problema es otro (ver el comentario en
+`sendBill()` para el mensaje de error que ayuda a diagnosticarlo: distingue un 401 con cuerpo HTML
+de nginx de un SOAP Fault real).
+
 Fuentes cruzadas (múltiples independientes, ya que no se pudo bajar el WSDL crudo — ver
 limitación de entorno abajo): nota oficial de SUNAT sobre el servicio beta
 (cpe.sunat.gob.pe/noticias/servicio-beta-para-realizar-pruebas-ubl-21), documentación de Greenter

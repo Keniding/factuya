@@ -63,17 +63,36 @@ export async function sendBill(
 ): Promise<SendBillResult> {
   const contentFileBase64 = Buffer.from(zipBytes).toString("base64");
   const envelope = buildSendBillEnvelope(fileName, contentFileBase64, credentials);
+  const wsUsername = `${credentials.ruc}${credentials.solUser}`;
+
+  // HALLAZGO EMPÍRICO (no solo de fuentes secundarias): una primera corrida real contra el
+  // endpoint beta devolvió HTTP 401 con un cuerpo HTML genérico servido por nginx ("401
+  // Authorization Required"), no un SOAP Fault XML. Esa firma de respuesta es característica del
+  // módulo auth_basic de nginx actuando como gate delante del servicio SOAP, antes de que el
+  // WS-Security del body llegue a evaluarse — por eso se agrega también HTTP Basic Auth con las
+  // mismas credenciales de WS-Security. Pendiente de confirmar con una corrida real desde un
+  // entorno con salida a internet (ver docs/adapters/pe-sunat.md, "Limitación de este entorno");
+  // si esto no resuelve un 401 real, revisar ahí antes de asumir que es un bug distinto.
+  const basicAuth = Buffer.from(`${wsUsername}:${credentials.solPassword}`).toString("base64");
 
   const response = await fetch(endpointUrl, {
     method: "POST",
     headers: {
       "Content-Type": "text/xml;charset=UTF-8",
       SOAPAction: "",
+      Authorization: `Basic ${basicAuth}`,
     },
     body: envelope,
   });
 
   const bodyText = await response.text();
+
+  if (response.status === 401) {
+    throw new Error(
+      `SUNAT/proxy devolvió HTTP 401 (Authorization Required). Si el cuerpo es HTML genérico de nginx (no un SOAP Fault XML), es un gate de autenticación HTTP delante del servicio, no un rechazo del WS-Security del body — ver el comentario en sendBill() y docs/adapters/pe-sunat.md. Cuerpo: ${bodyText.slice(0, 500)}`,
+    );
+  }
+
   const parsed = responseParser.parse(bodyText);
   const envelopeBody = parsed?.Envelope?.Body;
 
