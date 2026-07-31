@@ -38,3 +38,4 @@ Usar `NNNN-titulo-corto-en-kebab-case.md`, numeración correlativa. Plantilla:
 |---|---|---|
 | [0001](0001-typescript-version-pin.md) | Pin de TypeScript 6.0.2 sobre 7.0.2 para build/CI | Aceptado |
 | [0002](0002-sunat-signature-standard-xmldsig-vs-xades.md) | SUNAT usa XMLDSig, no XAdES; Colombia sí requiere XAdES-EPES | Aceptado |
+| [0003](0003-kms-shared-cmk-with-grants.md) | KMS: una CMK compartida + Grants por tenant, no una CMK por tenant | Aceptado |

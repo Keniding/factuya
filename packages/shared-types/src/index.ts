@@ -85,8 +85,17 @@ export interface InvoiceResult {
 export interface TenantCertificate {
   /** Referencia al material de firma — nunca la clave privada en texto plano. Ver docs/sdd/factuya-sdd.md §9. */
   publicCertificatePem: string;
-  /** Identificador de la clave en KMS/CloudHSM (producción) o ruta local (solo dev/test). */
+  /**
+   * En producción: ARN/key ID de la CMK de KMS **compartida** del ambiente (nunca una CMK por
+   * tenant — ver ADR-0003). En dev/test: ruta local del certificado.
+   */
   signerRef: string;
+  /**
+   * Token del Grant `Sign`-only de este tenant sobre la CMK compartida (ver ADR-0003,
+   * packages/signing/src/kms-grants.ts). Solo aplica cuando la firma es vía KMS — ausente en
+   * dev/test con `LocalPemKeySigner`.
+   */
+  kmsGrantToken?: string;
 }
 
 export interface TenantConfig {

@@ -36,6 +36,8 @@ bun run test:integration     # incluye la prueba contra SUNAT beta real (requier
 bun run apps/api/src/index.ts # levanta la API en :3000 — documentación interactiva en /docs
 ```
 
-Pendiente (orden de dependencia completo en `docs/flows.md`): multi-tenant real, `KmsSigner`
-contra AWS real, infraestructura como código (Step Functions/Lambda/DynamoDB/S3), flujo asíncrono
-SUNAT y notas de crédito/débito, webhooks, y el adaptador `co-factus` (Colombia, fase 2).
+Pendiente (orden de dependencia completo en `docs/flows.md`): multi-tenant real, la corrida en
+vivo de `KmsSigner` contra una CMK de AWS real (el código y el diseño de aislamiento por Grants
+— ADR-0003 — ya están implementados, solo probados contra un `KMSClient` falso), infraestructura
+como código (Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de crédito/débito,
+webhooks, y el adaptador `co-factus` (Colombia, fase 2).

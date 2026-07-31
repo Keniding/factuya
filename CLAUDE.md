@@ -45,7 +45,7 @@ docs/adapters/pe-sunat.md      cómo funciona el adaptador SUNAT, qué se verifi
 .claude/skills/deps-*/         skills de dependencias, generadas investigando el paquete real
 packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — modelo agnóstico
 packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
-packages/signing/              firma XMLDSig con Signer inyectable (local dev/test, KMS pendiente)
+packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner (ADR-0003, no probado en vivo)
 packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
 apps/api/                      servidor HTTP real (Bun.serve) + docs interactivas (Scalar en /docs)
 apps/api/openapi.yaml          contrato real de la API — fuente de verdad, no el §7 aspiracional del SDD

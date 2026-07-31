@@ -26,8 +26,9 @@ Lo que el SDD describe y **todavía no existe**:
   servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
 - Multi-tenancy real: un único tenant de desarrollo configurado por variables de entorno, sin
   autenticación de API, sin resolución de certificado/credenciales por tenant.
-- `KmsSigner` real (el archivo existe con el patrón investigado, pero nunca se ejecutó contra una
-  cuenta de AWS real — ver `packages/signing/src/kms-signer.ts`).
+- `KmsSigner` en vivo: la implementación real ya existe (`packages/signing/src/kms-signer.ts`,
+  `kms-grants.ts`, diseño en ADR-0003), probada contra un `KMSClient` falso pero nunca contra una
+  cuenta de AWS real.
 - Notas de crédito/débito, guías de remisión, resúmenes diarios/comunicación de baja (flujo
   asíncrono `sendSummary`/`getStatus`), y SIRE.
 - El adaptador Colombia (`co-factus`) — solo existe como referencia en el SDD, ningún código.
@@ -117,10 +118,14 @@ No es una lista de deseos sin orden — cada paso depende del anterior o desbloq
    `TenantConfig` por tenant (hoy es una constante), y el endpoint
    `POST /v1/tenants/{id}/certificate` del SDD §7 (todavía no implementado). Sin esto, todo lo
    demás sigue siendo de un solo tenant de desarrollo.
-2. **`KmsSigner` real**: ejecutar por primera vez contra una cuenta de AWS real, confirmar el
-   nombre exacto del `SigningAlgorithm` de KMS (el patrón ya está investigado en
-   `.claude/skills/deps-xml-crypto/04-kms-integration.md`, pendiente de confirmar contra el
-   servicio real). Depende de tener ya una cuenta de AWS de prueba disponible.
+2. **`KmsSigner` — falta la corrida en vivo**: la implementación ya existe
+   (`packages/signing/src/kms-signer.ts` y `kms-grants.ts`), con el `SigningAlgorithm`
+   (`RSASSA_PKCS1_V1_5_SHA_256`) y el diseño de aislamiento por tenant confirmados contra los
+   tipos reales del SDK y documentados en ADR-0003 — pero probada solo contra un `KMSClient` falso
+   (ver `packages/signing/README.md`), no contra AWS real. Falta: crear una CMK asimétrica de
+   prueba en una cuenta de AWS real, un Grant `Sign`-only, y confirmar que la firma resultante es
+   válida (mismo patrón de prueba real que ya se usó para `LocalPemKeySigner`). Depende de tener
+   ya una cuenta de AWS de prueba disponible.
 3. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
    DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
    `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por
