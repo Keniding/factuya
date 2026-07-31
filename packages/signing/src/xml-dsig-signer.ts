@@ -84,10 +84,17 @@ export function signUblXml(
 
   sig.SignatureAlgorithms[RSA_SHA256_URI] = makeDelegatedSignatureAlgorithm(signer);
 
+  // isEmptyUri: true -> <Reference URI=""> (referencia "todo el documento" del propio estándar
+  // XML-DSig). Sin esto, xml-crypto usa ensureHasId() y agrega él mismo un atributo `Id="_0"` al
+  // elemento raíz seleccionado por xpath para poder apuntarle con `URI="#_0"` — hallazgo real
+  // encontrado tras un rechazo de SUNAT beta ("element Invoice ... had undefined attribute Id"):
+  // el XSD de UBL InvoiceType no declara un atributo `Id` en el elemento raíz, así que ese
+  // atributo inyectado rompe la validación estricta del XML incluso siendo una firma válida.
   sig.addReference({
     xpath: "/*",
     digestAlgorithm: SHA256_URI,
     transforms: [ENVELOPED_SIGNATURE_URI, EXCLUSIVE_C14N_URI],
+    isEmptyUri: true,
   });
 
   return new Promise((resolve, reject) => {

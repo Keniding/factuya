@@ -7,3 +7,5 @@ dist/
 *.p12
 *.pem
 .DS_Store
+
+.idea/

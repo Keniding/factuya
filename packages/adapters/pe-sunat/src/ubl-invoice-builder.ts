@@ -34,15 +34,21 @@ function buildPartyBlock(party: PartyRef | Party, isSupplier: boolean): string {
   const schemeId = "taxIdType" in party && party.taxIdType ? party.taxIdType : PARTY_ID_SCHEME_RUC;
   const address = "address" in party ? party.address : undefined;
 
-  const addressBlock = address
+  // HALLAZGO EMPÍRICO (corrida real contra SUNAT beta, 2026-07-31): sin `cac:RegistrationAddress`
+  // (concretamente `cbc:AddressTypeCode`, el "código de establecimiento anexo" del emisor), SUNAT
+  // rechaza la factura con el fault de negocio 3030 ("no existe información del código de local
+  // anexo del emisor"), aun cuando el XML es válido contra el XSD. A diferencia del cliente, el
+  // emisor SIEMPRE debe llevar este bloque — "0000" es el código de establecimiento por defecto
+  // (casa matriz) cuando el caller no especifica una dirección completa.
+  const addressBlock = isSupplier || address
     ? `<cac:RegistrationAddress>
-        ${address.ubigeo ? `<cbc:ID>${address.ubigeo}</cbc:ID>` : ""}
+        ${address?.ubigeo ? `<cbc:ID>${address.ubigeo}</cbc:ID>` : ""}
         <cbc:AddressTypeCode>0000</cbc:AddressTypeCode>
-        ${address.district ? `<cbc:District>${cdata(address.district)}</cbc:District>` : ""}
-        ${address.province ? `<cbc:CityName>${cdata(address.province)}</cbc:CityName>` : ""}
-        ${address.department ? `<cbc:CountrySubentity>${cdata(address.department)}</cbc:CountrySubentity>` : ""}
-        ${address.line ? `<cac:AddressLine><cbc:Line>${cdata(address.line)}</cbc:Line></cac:AddressLine>` : ""}
-        <cac:Country><cbc:IdentificationCode>${address.countryCode}</cbc:IdentificationCode></cac:Country>
+        ${address?.district ? `<cbc:District>${cdata(address.district)}</cbc:District>` : ""}
+        ${address?.province ? `<cbc:CityName>${cdata(address.province)}</cbc:CityName>` : ""}
+        ${address?.department ? `<cbc:CountrySubentity>${cdata(address.department)}</cbc:CountrySubentity>` : ""}
+        ${address?.line ? `<cac:AddressLine><cbc:Line>${cdata(address.line)}</cbc:Line></cac:AddressLine>` : ""}
+        <cac:Country><cbc:IdentificationCode>${address?.countryCode ?? "PE"}</cbc:IdentificationCode></cac:Country>
       </cac:RegistrationAddress>`
     : "";
 
@@ -108,6 +114,16 @@ export function buildFacturaUbl(request: InvoiceRequest, tenant: TenantConfig, d
     ? `<cbc:Note languageLocaleID="1000">${cdata(request.amountInWords)}</cbc:Note>`
     : ""; // MVP: SUNAT recomienda el monto en letras; se omite si el caller no lo provee (ver docs/adapters/pe-sunat.md, limitación conocida)
 
+  // HALLAZGO EMPÍRICO (corrida real contra SUNAT beta, 2026-07-31): sin `cac:PaymentTerms`,
+  // SUNAT rechaza la factura con el fault de negocio 3244 ("debe consignar la información del
+  // tipo de transacción del comprobante") — verificado contra Factura-Gravada.xml de Greenter
+  // (docs/adapters/pe-sunat.md), que siempre incluye este bloque con ID "FormaPago".
+  const paymentMeansId = request.paymentMeans === "CREDIT" ? "Credito" : "Contado";
+  const paymentTermsBlock = `<cac:PaymentTerms>
+    <cbc:ID>FormaPago</cbc:ID>
+    <cbc:PaymentMeansID>${paymentMeansId}</cbc:PaymentMeansID>
+  </cac:PaymentTerms>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -144,6 +160,7 @@ export function buildFacturaUbl(request: InvoiceRequest, tenant: TenantConfig, d
   <cac:AccountingCustomerParty>
     ${buildPartyBlock(request.customer, false)}
   </cac:AccountingCustomerParty>
+  ${paymentTermsBlock}
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${request.currency}">${money(taxAmount)}</cbc:TaxAmount>
     <cac:TaxSubtotal>

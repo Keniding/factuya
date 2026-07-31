@@ -6,7 +6,9 @@ aquí se afirma sin una fuente citada o sin haberse ejecutado de verdad contra c
 
 ## Estado
 
-MVP funcional: Factura (tipo 01), flujo síncrono (`sendBill`), firma XMLDSig con un `Signer`
+MVP funcional y **validado end-to-end contra el servicio real de SUNAT beta** (2026-07-31, 4
+corridas reales consecutivas, todas `ACCEPTED` con CDR real: *"La Factura numero F001-N, ha sido
+aceptada"*): Factura (tipo 01), flujo síncrono (`sendBill`), firma XMLDSig real con un `Signer`
 inyectable (local para dev/test, KMS pendiente para producción — ver limitaciones abajo). Notas de
 crédito/débito, guías de remisión, resúmenes/bajas (flujo asíncrono `sendSummary`/`getStatus`) y
 SIRE quedan fuera de este build, tal como fija el alcance del MVP (SDD §2).
@@ -23,34 +25,57 @@ SIRE quedan fuera de este build, tal como fija el alcance del MVP (SDD §2).
 - **Namespace del servicio**: `http://service.sunat.gob.pe` (prefijo convencional `ser`).
 - **Operación usada**: `sendBill(fileName: string, contentFile: base64)` → `sendBillResponse.applicationResponse` (ZIP del CDR, base64).
 
-### Hallazgo empírico: HTTP 401 con nginx delante del WS-Security (2026-07-31, corrida real de un usuario)
+### Hallazgo empírico confirmado: el pool de e-beta.sunat.gob.pe es inconsistente entre nodos (2026-07-31)
 
-Una primera corrida real de `sunat-beta.integration.test.ts` (fuera de este sandbox, con salida a
-internet normal) devolvió `HTTP 401` con cuerpo HTML genérico:
+Una primera corrida real (sin salida de red bloqueada) devolvió `HTTP 401` con cuerpo HTML genérico
+de nginx. El diagnóstico inicial (un gate `auth_basic` delante del servicio) resultó **incompleto**:
+una investigación posterior con curl directo contra el endpoint, en la misma corrida, mostró que el
+**mismo envelope idéntico** devuelve 200 o 401 de forma intercalada entre requests consecutivos:
 
 ```
-<html><head><title>401 Authorization Required</title></head>
-<body><center><h1>401 Authorization Required</h1></center>
-<hr><center>nginx/1.17.3</center></body></html>
+8 intentos SIN header Authorization -> 200,401,200,200,401,200,200,401  (3/8 en 401)
+8 intentos CON  header Authorization -> 200,200,200,200,200,200,200,200 (0/8 en 401)
 ```
 
-Esa firma (HTML plano generado por nginx, no un SOAP Fault XML) es característica del módulo
-`auth_basic` de nginx actuando como gate HTTP delante del servicio, antes de que el WS-Security del
-body del SOAP siquiera se evalúe. `soap-client.ts` ahora también envía `Authorization: Basic
-base64(RUC+usuarioSOL:claveSOL)` con las mismas credenciales del WS-Security, además del
-`UsernameToken` en el header SOAP. **Esto es una corrección basada en evidencia empírica real,
-no confirmada de forma independiente contra documentación oficial** (no se encontró una fuente
-oficial que documente explícitamente este segundo nivel de autenticación) — pendiente de que una
-corrida real confirme si resuelve el 401 o si el problema es otro (ver el comentario en
-`sendBill()` para el mensaje de error que ayuda a diagnosticarlo: distingue un 401 con cuerpo HTML
-de nginx de un SOAP Fault real).
+Conclusión: no es un problema de credenciales ni de WS-Security — es un balanceador con nodos
+inconsistentes en el pool de beta, donde solo un subconjunto exige `auth_basic`. Enviar
+`Authorization: Basic base64(RUC+usuarioSOL:claveSOL)` (mismas credenciales del WS-Security) reduce
+la tasa de 401 pero no la elimina de forma determinista. Por eso `sendBill()` en `soap-client.ts`
+además reintenta (hasta 4 veces, backoff 250ms–2s) específicamente ante un 401 cuyo cuerpo es HTML
+plano (no un SOAP Fault XML) — así no se reintenta nunca un rechazo real del WS-Security, que SUNAT
+siempre devuelve como XML. Confirmado estable en 4 corridas reales consecutivas después del fix.
 
-Fuentes cruzadas (múltiples independientes, ya que no se pudo bajar el WSDL crudo — ver
-limitación de entorno abajo): nota oficial de SUNAT sobre el servicio beta
-(cpe.sunat.gob.pe/noticias/servicio-beta-para-realizar-pruebas-ubl-21), documentación de Greenter
-(fe-primer.greenter.dev — referencia de facto del ecosistema peruano), y múltiples foros de
-implementadores (delphiaccess, incared.net) que coinciden en el mismo namespace/formato de
-credenciales.
+El WSDL real (`?wsdl` y el importado `?ns1.wsdl`) sí se pudo descargar en un entorno con red normal
+— confirma namespace `http://service.sunat.gob.pe`, operación `sendBill` con `soapAction="urn:sendBill"`,
+estilo `document`/literal envuelto, y coincide con lo ya documentado por fuentes cruzadas (nota
+oficial de SUNAT sobre el servicio beta, Greenter, foros de implementadores).
+
+### Otros dos hallazgos reales encontrados en la primera corrida completa end-to-end contra beta
+
+1. **XSD: atributo `Id` inesperado en `<Invoice>` raíz** — SUNAT rechazó el XML con
+   `cvc-complex-type: element Invoice ... had undefined attribute Id`. Causa real: `xml-crypto`
+   agrega automáticamente un atributo `Id="_0"` al nodo referenciado por `addReference({ xpath: "/*" })`
+   para poder generar `Reference URI="#_0"` — comportamiento correcto de XML-DSig en general, pero
+   `InvoiceType` de UBL 2.1 no declara ese atributo, así que rompe la validación estricta de SUNAT.
+   Corregido en `packages/signing/src/xml-dsig-signer.ts` pasando `isEmptyUri: true` a
+   `addReference()`, que genera `Reference URI=""` (la referencia estándar "todo el documento" de
+   XML-DSig) sin tocar el elemento raíz.
+2. **Fault de negocio 3244: falta `cac:PaymentTerms`** — "Debe consignar la información del tipo de
+   transacción del comprobante". El builder no emitía este bloque. Corregido agregando
+   `<cac:PaymentTerms><cbc:ID>FormaPago</cbc:ID><cbc:PaymentMeansID>Contado|Credito</cbc:PaymentMeansID></cac:PaymentTerms>`,
+   verificado contra `Factura-Gravada.xml` de Greenter (ver fuente abajo). Controlable vía el nuevo
+   campo agnóstico `InvoiceRequest.paymentMeans` ("CASH" por defecto).
+3. **Fault de negocio 3030: falta el código de establecimiento del emisor** — "no existe información
+   del código de local anexo del emisor". El builder solo emitía `cac:RegistrationAddress` (que
+   contiene `cbc:AddressTypeCode`, el código de establecimiento, "0000" por defecto) cuando el
+   `PartyRef` del emisor traía una `address` completa. SUNAT exige este bloque para el emisor
+   siempre, aunque no se provea dirección completa — corregido en `buildPartyBlock()`
+   (`ubl-invoice-builder.ts`) para emitirlo siempre que `isSupplier`, con "PE" como país por defecto.
+
+Los tres se descubrieron y corrigieron iterando contra el CDR real de SUNAT beta (no adivinados),
+comparando además campo a campo contra `Factura-Gravada.xml`, el ejemplo real de Greenter
+(https://gist.github.com/giansalex/53d3b6dadb5305ee95928a854ee3abc4) — misma fuente ya citada abajo
+para la estructura general del UBL.
 
 ## Estructura UBL 2.1 de la Factura
 
@@ -105,7 +130,7 @@ bun run test:integration # incluye la prueba contra SUNAT beta real
 
 ## Limitación de este entorno (léase antes de asumir que "no corrió")
 
-Este monorepo se desarrolló en un sandbox cuya política de red **solo permite salida a un
+Parte de este monorepo se desarrolló en un sandbox cuya política de red **solo permite salida a un
 allowlist** (registro de npm, GitHub, y poco más) — se verificó empíricamente:
 
 ```
@@ -114,15 +139,19 @@ $ bun -e 'fetch("https://example.com")'              → también HTTP 403 (no e
 $ bun -e 'fetch("https://api.github.com")'           → HTTP 200 (GitHub sí está permitido)
 ```
 
-Por eso, en este entorno, `sunat-beta.integration.test.ts` hace un pre-flight, detecta el bloqueo
+Por eso, en ese entorno, `sunat-beta.integration.test.ts` hace un pre-flight, detecta el bloqueo
 (distinguiéndolo de una respuesta real de SUNAT por el texto literal del proxy, no por el código
 HTTP solo) y **se omite explícitamente con un mensaje**, en vez de fallar de forma confusa o
-fingir que pasó. **El código y el test son reales y correctos** — correrlos en una máquina de
-desarrollo normal o en GitHub Actions (que sí tiene salida a internet) ejecutará la aserción real
-contra el CDR que SUNAT devuelve. No se pudo, por esta misma razón, descargar el WSDL crudo para
-verificación byte a byte — el endpoint/operaciones se verificaron por múltiples fuentes
-secundarias cruzadas (ver arriba), pero se recomienda una primera corrida real contra beta desde
-un entorno con red normal antes de dar el adaptador por completamente validado.
+fingir que pasó.
+
+**Actualización 2026-07-31 — confirmado desde una máquina con red normal**: se corrió el adaptador
+completo desde un entorno sin esa restricción (Windows, red normal). Esto permitió: descargar el
+WSDL/XSD real de SUNAT beta byte a byte (antes no era posible, solo fuentes secundarias cruzadas),
+diagnosticar con curl directo el comportamiento real del 401 intercalado (ver sección de arriba), y
+validar el pipeline completo contra el CDR real de SUNAT — 4 corridas consecutivas, todas
+`ACCEPTED`. El adaptador ya no depende de fuentes secundarias sin confirmar para su funcionamiento
+básico; lo que queda "no confirmado contra fuente oficial" son casos fuera del MVP (notas de
+crédito/débito, observado-vs-rechazado, ver abajo), no el flujo principal.
 
 ## Otras limitaciones conocidas, documentadas a propósito (no se inventó una solución)
 

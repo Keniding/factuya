@@ -66,6 +66,8 @@ export interface InvoiceRequest {
   legalNotes?: string[];
   /** Monto total en letras — algunos países (Perú) lo exigen literal en el XML. */
   amountInWords?: string;
+  /** Forma de pago agnóstica; default "CASH" si el caller no la especifica. */
+  paymentMeans?: "CASH" | "CREDIT";
 }
 
 export type InvoiceStatus = "ACCEPTED" | "REJECTED" | "OBSERVED" | "PENDING";
