@@ -1,0 +1,23 @@
+{
+  "name": "factuya",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Middleware agnóstico de facturación electrónica — monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/adapters/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc6 --build --pretty",
+    "test": "bun test",
+    "test:integration": "bun test --timeout 30000 packages/adapters/pe-sunat/test/integration"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@typescript/typescript6": "6.0.2"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

@@ -32,3 +32,9 @@ de CVEs — nada de lo que sigue viene de memoria del modelo.
 - Riesgo conocido y ya cubierto: CVE-2025-29775/CVE-2025-29774 (bypass de verificación de firma)
   afectan versiones `< 6.0.1` — la versión pinneada (6.1.2) ya está parchada. Igual se documenta
   para que quede explícito por qué el pin es 6.1.2 y no una versión menor asumida "porque sí".
+- **Validado con un test real de firma+verificación** (`packages/signing/test/xml-dsig-signer.test.ts`,
+  certificado autofirmado generado con openssl, sin mocks de criptografía). En el proceso se
+  encontró un gotcha real de la librería no documentado en el README con este detalle —
+  `checkSignature()` no verifica un `KeyInfo` embebido salvo que se pase explícitamente
+  `getCertFromKeyInfo: SignedXml.getCertFromKeyInfo` al constructor — ver
+  `05-known-issues-and-alternatives.md`.

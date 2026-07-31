@@ -223,5 +223,21 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
+## 17. Estado de implementación (v0.2)
+
+El modelo de dominio (§6), el puerto `CountryAdapter` (§4) y el adaptador `pe-sunat` (Factura,
+flujo síncrono) están implementados y probados con pruebas reales (no mockeadas) — ver
+`docs/adapters/pe-sunat.md` para el detalle completo, qué se verificó, cómo correr las pruebas, y
+las limitaciones documentadas explícitamente (contador de correlativo en memoria en vez de
+DynamoDB, `KmsSigner` sin implementar por falta de acceso a AWS en el entorno de desarrollo,
+distinción aceptado-con-observaciones pendiente de verificar contra el catálogo oficial de SUNAT).
+
+Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
+proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, `KmsSigner` de producción,
+notas de crédito/débito, flujo asíncrono (`sendSummary`/`getStatus`), y el adaptador `co-factus`
+(§12).
+
 ---
-*Próximo paso sugerido: definir el JSON Schema exacto de `InvoiceRequest`/`InvoiceLine`/`TaxSummary` y el mapeo campo a campo contra la Guía XML UBL 2.1 de SUNAT, y correr el `dependency-skill-agent` sobre el resto de dependencias core (SOAP client, AWS SDK v3 clients, adm-zip/compresión, parser UBL) antes de escribir el primer `package.json`.*
+*Próximo paso sugerido: implementar `KmsSigner` contra AWS KMS real (requiere cuenta/red AWS, no
+disponible en el entorno donde se construyó este MVP), la orquestación Step Functions, y correr
+`dependency-skill-agent` sobre `@aws-sdk/client-kms` antes de esa implementación.*

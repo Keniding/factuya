@@ -49,9 +49,24 @@ de compilador a medio madurar.
 
 ## Consecuencias
 
-- El `package.json` raíz fija `"typescript": "6.0.2"` (paquete `@typescript/typescript6` bajo el
-  alias `typescript`, o el mecanismo de alias que Bun soporte al momento de implementar — verificar
-  contra la documentación de Bun al escribir el `package.json`, no asumir sintaxis).
-- CI corre `tsc --noEmit` (TS6) como gate obligatorio; `tsgo` es un job informativo aparte.
+- El `package.json` raíz fija `"@typescript/typescript6": "6.0.2"` como devDependency directa (no
+  como alias de `typescript`).
+- CI corre `tsc6 --build --pretty` (TS6) como gate obligatorio; `tsgo` es un job informativo aparte.
 - Este ADR debe revisarse activamente, no queda "fijo para siempre": es una decisión con fecha de
   vencimiento implícita (GA de TS 7.1).
+
+## Addendum verificado por instalación real (2026-07-31)
+
+Se instaló el paquete de verdad con `bun add -D @typescript/typescript6@6.0.2` para no asumir su
+comportamiento. Hallazgo que corrige lo que se había dejado como "verificar al implementar":
+
+- El binario que expone `@typescript/typescript6` en `node_modules/.bin` es **`tsc6`**, no `tsc`.
+  Su propio `package.json` lo declara así: `"bin": { "tsc6": "./bin/tsc6" }`.
+- Internamente, `@typescript/typescript6` depende de `"@typescript/old": "npm:typescript@^6"` —
+  es decir, reexporta el paquete real `typescript` (serie 6.x) bajo un nombre interno. Eso hace
+  que Bun también hoiste un binario `tsc` en `.bin` proveniente de esa dependencia transitiva, pero
+  **no es un contrato público** de `@typescript/typescript6` — no depender de que `tsc` exista, usar
+  siempre `tsc6` explícitamente en scripts (`package.json` raíz de Factuya ya usa `tsc6 --build`).
+- `tsc6 --version` reporta `Version 6.0.3` (no `6.0.2` exacto) — el binario incluye un patch interno
+  adicional al número de versión del paquete npm; no afecta la decisión de este ADR, solo se anota
+  para que no sorprenda a quien corra `--version` y espere ver literalmente `6.0.2`.

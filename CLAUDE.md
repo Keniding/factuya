@@ -27,6 +27,10 @@ Middleware agnóstico de facturación electrónica (MVP: SUNAT Perú). Ver
 7. **Responsabilidad legal**: Factuya es un proxy tecnológico, no un OSE/PSE homologado — ver SDD
    §13. No diseñar ningún flujo que implique que Factuya asume la validación tributaria en nombre
    del tenant.
+8. **Este entorno de desarrollo bloquea la red saliente salvo un allowlist** (npm, GitHub, poco
+   más) — verificado empíricamente, ver `docs/adapters/pe-sunat.md` "Limitación de este entorno".
+   Un test que falla por no alcanzar un host externo no es necesariamente un bug de código; revisar
+   primero si es el mismo bloqueo antes de "arreglarlo" a ciegas.
 
 ## Dónde está cada cosa
 
@@ -35,7 +39,22 @@ docs/sdd/factuya-sdd.md        spec funcional + técnico (fuente de verdad del p
 docs/adr/                      decisiones de arquitectura, numeradas
 docs/policies/                 git-workflow.md, documentation.md
 docs/dependencies/LEDGER.md    toda dependencia externa investigada, con fecha y skill asociada
-docs/adapters/                 un doc por país (se crea cuando exista el adaptador)
+docs/adapters/pe-sunat.md      cómo funciona el adaptador SUNAT, qué se verificó y limitaciones
 .claude/agents/                agentes especializados de este repo
 .claude/skills/deps-*/         skills de dependencias, generadas investigando el paquete real
+packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — modelo agnóstico
+packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
+packages/signing/              firma XMLDSig con Signer inyectable (local dev/test, KMS pendiente)
+packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
 ```
+
+## Cómo correr y probar
+
+```bash
+bun install && bun run typecheck && bun test
+```
+
+`bun test` incluye tests unitarios y un test de integración de componente contra un servidor SOAP
+local real (mismo protocolo que SUNAT). `bun run test:integration` agrega la prueba contra el
+ambiente beta real de SUNAT — se omite automáticamente con un mensaje claro si el entorno no tiene
+salida a internet (ver punto 8 arriba), no falla en falso ni finge pasar.

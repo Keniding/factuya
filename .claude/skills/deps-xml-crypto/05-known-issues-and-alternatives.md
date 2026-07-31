@@ -1,5 +1,46 @@
 # 05 — Known issues, CVEs y alternativas descartadas
 
+## Gotcha real encontrado implementando y probando `packages/signing` (2026-07-31)
+
+**`checkSignature()` no verifica nada por defecto si el certificado viene por `KeyInfo`
+embebido — falla con "KeyInfo or publicCert or privateKey is required to validate signature"
+incluso cuando el `<KeyInfo><X509Data><X509Certificate>` SÍ está presente en el XML.**
+
+Encontrado corriendo el test real de round-trip firmar→verificar de `packages/signing`
+(`packages/signing/test/xml-dsig-signer.test.ts`), no leyendo el README. Causa raíz, en
+`signed-xml.js`:
+
+```js
+// Línea ~41, valor por defecto a nivel de clase:
+this.getCertFromKeyInfo = SignedXml.getCertFromKeyInfo;
+// ...
+// Dentro del constructor, tras desestructurar `options`:
+this.getKeyInfoContent = getKeyInfoContent ?? this.getKeyInfoContent;      // sí cae al default de la clase
+this.getCertFromKeyInfo = getCertFromKeyInfo ?? SignedXml.noop;            // NO cae al default — cae a un no-op
+```
+
+`getKeyInfoContent` y `getCertFromKeyInfo` deberían comportarse igual (ambos con default útil si
+no se pasa nada), pero el constructor solo respeta el default de clase para el primero. El
+segundo queda deshabilitado (`SignedXml.noop`, que siempre devuelve `null`) en cuanto se
+construye `SignedXml` con **cualquier** objeto de opciones — incluido uno vacío — a menos que se
+pase explícitamente `getCertFromKeyInfo: SignedXml.getCertFromKeyInfo`.
+
+**Consecuencia práctica**: cualquier código que verifique una firma (`checkSignature`) confiando
+en el certificado embebido en el XML — no solo en `packages/signing`, también si en el futuro se
+valida la firma de una respuesta de un OSE o un CDR — debe construir el verificador así:
+
+```typescript
+const verifier = new SignedXml({ getCertFromKeyInfo: SignedXml.getCertFromKeyInfo });
+const [signatureNode] = verifier.findSignatures(doc); // tampoco basta checkSignature() solo:
+verifier.loadSignature(signatureNode);                 // hay que localizar y cargar el nodo de firma
+verifier.checkSignature(signedXml);                    // recién aquí funciona
+```
+
+También se confirmó que `checkSignature()` **no descubre el nodo `<Signature>` por sí solo** —
+depende de que `loadSignature()` ya haya sido llamado (`this.signatureNode` debe estar seteado).
+El flujo correcto es siempre `findSignatures(doc)` → `loadSignature(signatureNode)` →
+`checkSignature(xml)`, en ese orden.
+
 ## CVEs conocidas (verificadas 2026-07-31, no de memoria)
 
 | CVE | Descripción | Versiones afectadas | ¿Afecta a la versión pinneada (6.1.2)? |

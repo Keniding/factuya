@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared-types" },
+    { "path": "packages/core-domain" },
+    { "path": "packages/signing" },
+    { "path": "packages/adapters/pe-sunat" }
+  ]
+}
