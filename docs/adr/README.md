@@ -1,0 +1,40 @@
+# Architecture Decision Records (ADR)
+
+Registro de decisiones de arquitectura de Factuya. Cada ADR documenta una decisión no trivial,
+el contexto que la motivó, las fuentes que se verificaron (no se aceptan decisiones basadas en
+memoria/entrenamiento del LLM sin verificar contra una fuente actual — ver
+`docs/sdd/factuya-sdd.md` §16), y las consecuencias.
+
+## Cuándo escribir un ADR
+
+- Elegir o cambiar una dependencia core (runtime, compilador, librería de firma, SDK).
+- Cualquier decisión que afecte a más de un paquete del monorepo.
+- Cualquier corrección a una afirmación técnica hecha en una versión anterior del SDD.
+- Decisiones de seguridad/cumplimiento (custodia de claves, canal de envío a SUNAT, etc.).
+
+## Formato
+
+Usar `NNNN-titulo-corto-en-kebab-case.md`, numeración correlativa. Plantilla:
+
+```markdown
+# ADR-NNNN: Título
+
+- Estado: propuesto | aceptado | reemplazado por ADR-XXXX
+- Fecha: YYYY-MM-DD
+
+## Contexto
+
+## Decisión
+
+## Fuentes verificadas
+(enlaces + fecha de verificación — no vale "se sabe que...")
+
+## Consecuencias
+```
+
+## Índice
+
+| ADR | Título | Estado |
+|---|---|---|
+| [0001](0001-typescript-version-pin.md) | Pin de TypeScript 6.0.2 sobre 7.0.2 para build/CI | Aceptado |
+| [0002](0002-sunat-signature-standard-xmldsig-vs-xades.md) | SUNAT usa XMLDSig, no XAdES; Colombia sí requiere XAdES-EPES | Aceptado |
