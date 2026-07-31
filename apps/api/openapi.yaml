@@ -1,0 +1,385 @@
+openapi: 3.1.0
+info:
+  title: Factuya API
+  version: 0.1.0
+  description: >
+    API de desarrollo de Factuya — middleware agnóstico de facturación electrónica. Este
+    documento describe exactamente lo que `apps/api` implementa hoy, no el contrato aspiracional
+    completo de docs/sdd/factuya-sdd.md §7. Diferencias deliberadas respecto al SDD, documentadas
+    en docs/flows.md:
+
+    - `POST /v1/invoices` responde de forma síncrona (201 con el resultado final), no 202 +
+      webhook, porque el adaptador SUNAT de este MVP solo implementa el flujo síncrono
+      (`sendBill`).
+    - Un único tenant de desarrollo (variables de entorno, certificado efímero) — no hay
+      resolución de tenant por API key ni certificados por tenant en KMS todavía.
+    - Solo Factura (`documentType: "INVOICE"`) — notas de crédito/débito no están implementadas.
+    - Los catálogos expuestos son el subconjunto mínimo que el MVP soporta, no el catálogo
+      oficial completo de SUNAT.
+  contact:
+    name: Factuya
+    url: https://github.com/Keniding/factuya
+  license:
+    name: Uso interno — sin licencia pública definida todavía
+servers:
+  - url: http://localhost:3000
+    description: Servidor de desarrollo local (bun run apps/api)
+tags:
+  - name: invoices
+    description: Emisión y consulta de comprobantes electrónicos
+  - name: catalogs
+    description: Catálogos mínimos soportados por el MVP
+  - name: health
+    description: Estado del servicio
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Estado de liveness del servicio
+      responses:
+        "200":
+          description: El servicio está corriendo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+              examples:
+                ok:
+                  value: { "status": "ok" }
+
+  /v1/invoices:
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: Emitir un comprobante electrónico
+      description: >
+        Arma el UBL 2.1, firma con XMLDSig, envía a SUNAT (sendBill síncrono) y devuelve el
+        resultado normalizado ya con la respuesta real de SUNAT (CDR). El tenant, certificado y
+        credenciales SOL se resuelven del lado del servidor (variables de entorno de desarrollo,
+        ver apps/api/README.md) — el campo `tenantId` del cuerpo se acepta pero no se usa todavía
+        para enrutar a un tenant real.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceRequest"
+            examples:
+              facturaGravada:
+                summary: Factura con una línea gravada con IGV 18%
+                value:
+                  documentType: INVOICE
+                  series: F001
+                  issueDate: "2026-07-31"
+                  issueTime: "10:00:00"
+                  currency: PEN
+                  amountInWords: "CIENTO DIECIOCHO CON 00/100 SOLES"
+                  paymentMeans: CASH
+                  issuer:
+                    taxId: "20000000001"
+                    legalName: EMPRESA DEMO SAC
+                  customer:
+                    taxId: "10000000001"
+                    legalName: CLIENTE DE PRUEBA
+                  lines:
+                    - id: "1"
+                      description: Producto de prueba
+                      quantity: 1
+                      unitCode: NIU
+                      unitPrice: 100
+                      lineExtensionAmount: 100
+                      taxCategory: GRAVADO
+                      taxPercent: 18
+                      taxAmount: 18
+                  taxes:
+                    - scheme: IGV
+                      taxableAmount: 100
+                      taxAmount: 18
+                      currency: PEN
+      responses:
+        "201":
+          description: >
+            El comprobante fue procesado por SUNAT (status puede ser ACCEPTED o REJECTED — un
+            201 significa que la solicitud a SUNAT se completó, no que necesariamente fue
+            aceptada; revisar el campo `status`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceResultWithId"
+              examples:
+                aceptada:
+                  value:
+                    id: "b2b9e6b0-6e3a-4c2a-9f0a-111111111111"
+                    status: ACCEPTED
+                    countryDocumentId: F001-1
+                    countryReferenceCode: "0"
+                    rawProviderResponse:
+                      responseCode: "0"
+                      description: "La Factura numero F001-1, ha sido aceptada"
+        "400":
+          description: El cuerpo de la solicitud no cumple el contrato de InvoiceRequest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: >
+            SUNAT (o el proxy delante de SUNAT beta) devolvió un error de transporte o un SOAP
+            Fault real — ver docs/adapters/pe-sunat.md para los casos conocidos (fault de
+            negocio, XSD, o el pool de beta inconsistente).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: Consultar un comprobante emitido previamente
+      description: >
+        Lee de un store en memoria del proceso — se pierde en cada reinicio del servidor de
+        desarrollo. Producción necesita DynamoDB (ver docs/sdd/factuya-sdd.md §11, no
+        implementado en este MVP).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: El id devuelto por POST /v1/invoices
+      responses:
+        "200":
+          description: El comprobante encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoredInvoiceResponse"
+        "404":
+          description: No existe un comprobante con ese id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/catalogs/{country}/{catalog}:
+    get:
+      operationId: getCatalog
+      tags: [catalogs]
+      summary: Consultar un catálogo mínimo soportado por el MVP
+      description: >
+        Solo `country: PE` está implementado. Los catálogos disponibles son
+        `document-types`, `identity-document-types`, y `tax-affectation` — ver
+        apps/api/src/catalogs.ts. Esto NO es el catálogo oficial completo de SUNAT, solo los
+        valores fijos que el MVP soporta hoy (ver docs/policies/documentation.md §5).
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [PE]
+        - name: catalog
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [document-types, identity-document-types, tax-affectation]
+      responses:
+        "200":
+          description: Las entradas del catálogo solicitado
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogEntry"
+              examples:
+                documentTypes:
+                  value: [{ "code": "01", "name": "Factura" }]
+        "404":
+          description: País o catálogo desconocido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    PartyAddress:
+      type: object
+      required: [countryCode]
+      properties:
+        countryCode:
+          type: string
+          description: ISO 3166-1 alpha-2, ej. "PE"
+        line: { type: string }
+        district: { type: string }
+        province: { type: string }
+        department: { type: string }
+        ubigeo:
+          type: string
+          description: Código de ubicación geográfica de Perú (opcional)
+
+    PartyRef:
+      type: object
+      required: [taxId, legalName]
+      properties:
+        taxId:
+          type: string
+          description: RUC del emisor
+        legalName: { type: string }
+        tradeName: { type: string }
+        address: { $ref: "#/components/schemas/PartyAddress" }
+
+    Party:
+      type: object
+      required: [taxId, legalName]
+      properties:
+        taxId: { type: string }
+        legalName: { type: string }
+        taxIdType:
+          type: string
+          description: 'Catálogo 06 de SUNAT — "6" = RUC, "1" = DNI'
+        address: { $ref: "#/components/schemas/PartyAddress" }
+
+    InvoiceLine:
+      type: object
+      required:
+        [id, description, quantity, lineExtensionAmount, taxCategory, taxPercent, taxAmount]
+      properties:
+        id: { type: string }
+        description: { type: string }
+        quantity: { type: number }
+        unitCode:
+          type: string
+          default: NIU
+          description: Catálogo UN/ECE rec 20 — "NIU" (unidad) si no se especifica
+        unitPrice: { type: number }
+        lineExtensionAmount:
+          type: number
+          description: quantity * unitPrice, sin impuesto
+        taxCategory:
+          type: string
+          enum: [GRAVADO, EXONERADO, INAFECTO, GRATUITO]
+        taxPercent: { type: number }
+        taxAmount: { type: number }
+        sellerItemId: { type: string }
+
+    TaxSummary:
+      type: object
+      required: [scheme, taxableAmount, taxAmount, currency]
+      properties:
+        scheme:
+          type: string
+          enum: [IGV, IVA, ICBPER, OTHER]
+        taxableAmount: { type: number }
+        taxAmount: { type: number }
+        currency:
+          type: string
+          description: ISO 4217
+
+    InvoiceRequest:
+      type: object
+      required: [documentType, issueDate, currency, issuer, customer, lines, taxes]
+      properties:
+        tenantId:
+          type: string
+          description: Aceptado pero no usado para enrutar a un tenant real en este MVP.
+        documentType:
+          type: string
+          enum: [INVOICE]
+          description: Solo Factura está soportada en este MVP.
+        series:
+          type: string
+          description: Si no se envía, el servidor resuelve una por defecto (dev-only).
+        issueDate:
+          type: string
+          format: date
+        issueTime:
+          type: string
+          default: "00:00:00"
+        currency:
+          type: string
+          description: ISO 4217, ej. PEN
+        issuer: { $ref: "#/components/schemas/PartyRef" }
+        customer: { $ref: "#/components/schemas/Party" }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/InvoiceLine" }
+        taxes:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/TaxSummary" }
+        legalNotes:
+          type: array
+          items: { type: string }
+        amountInWords:
+          type: string
+          description: Monto total en letras — SUNAT lo recomienda, Factuya no lo calcula automáticamente.
+        paymentMeans:
+          type: string
+          enum: [CASH, CREDIT]
+          default: CASH
+
+    InvoiceResult:
+      type: object
+      required: [status, countryDocumentId, rawProviderResponse]
+      properties:
+        status:
+          type: string
+          enum: [ACCEPTED, REJECTED, OBSERVED, PENDING]
+        countryDocumentId:
+          type: string
+          description: 'Ej. "F001-123"'
+        countryReferenceCode:
+          type: string
+          description: Código de respuesta del CDR de SUNAT (ej. "0" = aceptado)
+        xmlUrl: { type: string }
+        pdfUrl: { type: string }
+        cdrUrl: { type: string }
+        rawProviderResponse:
+          type: object
+          description: Respuesta cruda del CDR (responseCode, description, cdrXml) — para debugging.
+          additionalProperties: true
+
+    InvoiceResultWithId:
+      allOf:
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, format: uuid }
+        - $ref: "#/components/schemas/InvoiceResult"
+
+    StoredInvoiceResponse:
+      allOf:
+        - type: object
+          required: [id, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            createdAt: { type: string, format: date-time }
+        - $ref: "#/components/schemas/InvoiceResult"
+
+    CatalogEntry:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        details:
+          type: array
+          items: { type: string }

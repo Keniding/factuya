@@ -1,10 +1,14 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.2 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.3 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
-> fuentes actuales (ver ADR-0001 y ADR-0002) que v0.1 dejaba imprecisas.
+> fuentes actuales (ver ADR-0001 y ADR-0002) que v0.1 dejaba imprecisas. v0.3 agrega `apps/api`
+> (servidor HTTP real, validado contra SUNAT beta) y su documentación interactiva (§7 ahora
+> distingue el contrato aspiracional de este documento del contrato real implementado en
+> `apps/api/openapi.yaml`) — ver `docs/flows.md` para el detalle completo y el estado honesto de
+> qué falta.
 
 ---
 
@@ -96,6 +100,8 @@ interface InvoiceRequest {
   lines: InvoiceLine[];
   taxes: TaxSummary[];      // normalizado; el adaptador traduce a IGV/IVA/etc.
   legalNotes?: string[];
+  amountInWords?: string;   // algunos países (Perú) lo exigen literal en el XML
+  paymentMeans?: "CASH" | "CREDIT"; // default "CASH" — SUNAT exige informar esto (cac:PaymentTerms)
 }
 
 interface InvoiceResult {
@@ -112,6 +118,14 @@ interface InvoiceResult {
 El adaptador `pe-sunat` traduce este modelo a UBL 2.1 real (con sus namespaces `cac`/`cbc`, catálogos SUNAT de tipo de documento, tipo de moneda, tipo de afectación IGV, unidad de medida, etc.).
 
 ## 7. Contrato API público (lo que ve el desarrollador integrador)
+
+Este es el contrato **aspiracional completo** de producción. El contrato **real, ya implementado
+y validado contra SUNAT beta**, es un subconjunto — ver `apps/api/openapi.yaml` (fuente de verdad
+del contrato real, servido interactivamente en `GET /docs` vía Scalar) y `docs/flows.md` para el
+detalle exacto de qué difiere y por qué. Diferencias principales hoy: `POST /v1/invoices` responde
+**201 síncrono** (no 202 + webhook, el adaptador SUNAT del MVP solo implementa `sendBill`
+síncrono), no existe todavía `POST /v1/invoices/{id}/void` ni `POST /v1/tenants/{id}/certificate`
+ni el webhook, y `GET /v1/catalogs` expone solo el subconjunto mínimo que el MVP soporta.
 
 ```
 POST   /v1/invoices                → emite un comprobante (asíncrono; responde 202 + invoiceId)

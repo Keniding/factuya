@@ -36,6 +36,7 @@ Middleware agnóstico de facturación electrónica (MVP: SUNAT Perú). Ver
 
 ```
 docs/sdd/factuya-sdd.md        spec funcional + técnico (fuente de verdad del producto)
+docs/flows.md                  flujo sin Factuya / con Factuya / roadmap — estado honesto del proyecto
 docs/adr/                      decisiones de arquitectura, numeradas
 docs/policies/                 git-workflow.md, documentation.md
 docs/dependencies/LEDGER.md    toda dependencia externa investigada, con fecha y skill asociada
@@ -46,6 +47,8 @@ packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — mod
 packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
 packages/signing/              firma XMLDSig con Signer inyectable (local dev/test, KMS pendiente)
 packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
+apps/api/                      servidor HTTP real (Bun.serve) + docs interactivas (Scalar en /docs)
+apps/api/openapi.yaml          contrato real de la API — fuente de verdad, no el §7 aspiracional del SDD
 ```
 
 ## Cómo correr y probar

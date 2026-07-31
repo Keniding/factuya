@@ -1,0 +1,17 @@
+{
+  "name": "@factuya/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@factuya/adapter-pe-sunat": "workspace:*",
+    "@factuya/core-domain": "workspace:*",
+    "@factuya/shared-types": "workspace:*",
+    "@factuya/signing": "workspace:*",
+    "@scalar/api-reference": "1.64.0"
+  }
+}
