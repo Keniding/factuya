@@ -24,6 +24,10 @@ propósito — nunca se commitea.
   con `aws configure list-profiles`), ten cuidado de no mezclar contextos — todos los comandos de
   esta guía especifican `--profile` explícitamente por esa razón, nunca dependen del perfil
   `default` implícito.
+- **Access Key ID/Secret Access Key nunca van en ningún chat, archivo del repo, ni ticket** — ni
+  siquiera con un asistente. Si una credencial llega a aparecer en una conversación (por ejemplo,
+  pegando la salida completa de `aws configure`), trátala como comprometida y rótala de inmediato
+  (ver el aviso en el Paso 2) — no esperes a que "quizás no pase nada".
 
 ## Paso 1 — Crear un usuario IAM dedicado, solo acceso programático
 
@@ -125,8 +129,23 @@ En tu propia terminal (no dentro de una sesión de asistente que registre lo que
 aws configure --profile factuya-dev
 ```
 
-Pide Access Key ID, Secret Access Key, región (la región donde vive tu cuenta — verificar en la
-consola, no asumir), y formato de salida (`json`).
+Pide Access Key ID, Secret Access Key, región, y formato de salida.
+
+> **No copiar/pegar la salida de este comando a nadie, ni a un asistente, ni a un chat, ni a un
+> ticket.** `aws configure` muestra el Access Key ID y pide el Secret Access Key en la misma
+> sesión visible — pegar esa transcripción completa expone la credencial. Ya pasó una vez en el
+> desarrollo de esta guía: la corrección fue rotar la key expuesta de inmediato (desactivarla o
+> borrarla en IAM → Users → el usuario → Security credentials, y crear una nueva) antes de seguir.
+> Si necesitas mostrarle a alguien (o a un asistente) que la configuración funcionó, usa el
+> comando del Paso 3 (`sts get-caller-identity`) — su salida no contiene ningún secreto.
+
+Si al correr `aws configure` dejas región/formato en blanco, se pueden setear después sin volver
+a tocar las credenciales (comando seguro de pegar o de pedirle a un asistente que lo corra):
+
+```bash
+aws configure set region <tu región> --profile factuya-dev
+aws configure set output json --profile factuya-dev
+```
 
 ## Paso 3 — Verificar la conexión
 
