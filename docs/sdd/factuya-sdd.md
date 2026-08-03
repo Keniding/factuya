@@ -1,6 +1,6 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.7 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.8 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
@@ -18,7 +18,9 @@ Versión 0.7 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/D
 > todos los tenants firmarían con la misma identidad criptográfica, contradiciendo el §13) e
 > implementa `POST /v1/tenants/{id}/certificate` (ADR-0006: import real de la clave privada del
 > tenant, AES-KWP/RFC 5649 implementado a mano y validado contra los vectores oficiales del RFC) —
-> ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
+> ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta. v0.8 confirma ese
+> import de clave con una corrida real contra AWS KMS (2026-08-03, no solo contra un `KMSClient`
+> falso) — ver `docs/aws/kms-live-verification.md` Paso 4b.
 
 ---
 
@@ -266,29 +268,29 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
-## 17. Estado de implementación (v0.7)
+## 17. Estado de implementación (v0.8)
 
 El modelo de dominio (§6), el puerto `CountryAdapter` (§4), el adaptador `pe-sunat` (Factura,
 flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva, multi-tenant real
 por API Key —ADR-0004— y alta de tenants con custodia de clave real —ADR-0005/ADR-0006—), y
 `KmsSigner` (§9) están implementados. **Verificado con corridas reales** (no mockeadas): SUNAT
-beta, `apps/api` contra ese mismo pipeline (incluyendo el aislamiento real entre tenants), y la
+beta, `apps/api` contra ese mismo pipeline (incluyendo el aislamiento real entre tenants), la
 firma vía KMS real (CMK creada, firma verificada con `crypto.verify()` contra la llave pública
-real). El import de la clave privada real de un tenant (ADR-0006) está probado con validación
-criptográfica completa contra un `KMSClient` falso, **pendiente la corrida en vivo contra AWS
-real**. Ver `docs/adapters/pe-sunat.md`, `docs/aws/kms-live-verification.md`,
-`apps/api/README.md`, y `docs/flows.md` para el detalle completo, qué se verificó, y las
-limitaciones documentadas explícitamente (contador de correlativo en memoria en vez de DynamoDB,
-`TenantRegistry` en memoria del proceso en vez de DynamoDB, sin soporte de `.pfx`/PKCS#12,
-distinción aceptado-con-observaciones pendiente de verificar contra el catálogo oficial de
-SUNAT).
+real), y el import de la clave privada real de un tenant a su propia CMK (ADR-0006: CMK creada con
+`Origin: EXTERNAL`, clave importada con `RSA_AES_KEY_WRAP_SHA_256`, firma verificada contra la
+llave pública original del tenant, 2026-08-03). Ver `docs/adapters/pe-sunat.md`,
+`docs/aws/kms-live-verification.md`, `apps/api/README.md`, y `docs/flows.md` para el detalle
+completo, qué se verificó, y las limitaciones documentadas explícitamente (contador de correlativo
+en memoria en vez de DynamoDB, `TenantRegistry` en memoria del proceso en vez de DynamoDB, sin
+soporte de `.pfx`/PKCS#12, distinción aceptado-con-observaciones pendiente de verificar contra el
+catálogo oficial de SUNAT).
 
-Pendiente: la corrida en vivo del import de clave (ver arriba), orquestación real como Step
-Functions/Lambda (§5, hoy `emitInvoice` es una función en proceso que sigue la misma secuencia
-lógica), persistencia DynamoDB/S3, notas de crédito/débito, flujo asíncrono
-(`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
+Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
+proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, soporte de
+`.pfx`/PKCS#12, notas de crédito/débito, flujo asíncrono (`sendSummary`/`getStatus`), y el
+adaptador `co-factus` (§12).
 
 ---
-*Próximo paso sugerido: correr la verificación en vivo del import de clave (`docs/aws/kms-live-verification.md`
-Paso 4b) y luego infraestructura como código (CDK/Terraform) para Step Functions/Lambda — ver
-`docs/flows.md` para el orden de dependencia completo del roadmap.*
+*Próximo paso sugerido: infraestructura como código (CDK/Terraform) para Step Functions/Lambda,
+o persistencia real (DynamoDB/S3) — ver `docs/flows.md` para el orden de dependencia completo del
+roadmap.*

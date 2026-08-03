@@ -102,3 +102,27 @@ KMS real.
   sistema de roles/permisos real, que debe diseñarse antes de producción.
 - Cada tenant importado tiene una CMK real, distinta, verificable — cumple el §13 del SDD sin
   ambigüedad, a diferencia del diseño original de ADR-0003.
+
+## Addendum verificado con una corrida real (2026-08-03)
+
+El flujo completo de este ADR se corrió contra AWS KMS real, no solo contra un `KMSClient` falso
+ni contra vectores de prueba aislados de RFC 5649:
+
+- Se generó una clave RSA-2048 local, simulando la clave privada real que un tenant ya tendría de
+  su propio registro ante SUNAT.
+- `createTenantSigningKey` creó una CMK dedicada (`Origin: EXTERNAL`, `KeySpec: RSA_2048`) e
+  importó esa clave con el procedimiento real de `RSA_AES_KEY_WRAP_SHA_256`:
+  `GetParametersForImport` → envolver con la implementación a mano de AES-KWP (`aes-kwp.ts`) +
+  RSA-OAEP-SHA-256 → `ImportKeyMaterial`.
+- `KmsSigner` firmó un mensaje usando esa CMK ya importada, y la firma se verificó con
+  `crypto.verify()` de Node contra la llave pública **original** del tenant (no una obtenida de
+  KMS) — confirma que KMS importó y usa exactamente la clave privada enviada, no una generada por
+  error ni una mezcla con otra CMK.
+- Limpieza confirmada: `ScheduleKeyDeletion` de la CMK de prueba (`KeyId:
+  ce2915a7-5d77-4d22-a412-960c6c284958`).
+
+Esto confirma, además del diseño y el código, que la implementación manual de AES-KWP (RFC 5649)
+es compatible byte a byte con lo que KMS real espera recibir en `EncryptedKeyMaterial` — no solo
+con los vectores oficiales del RFC ni con un desenvuelto simulado localmente. Detalle reproducible
+en `docs/aws/kms-live-verification.md` Paso 4b y
+`packages/signing/test/integration/kms-tenant-key-import-live.integration.test.ts`.

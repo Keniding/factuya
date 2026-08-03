@@ -43,14 +43,19 @@ esperada. Limpieza confirmada después (`ScheduleKeyDeletion`, `KeyState: Pendin
 Detalle completo en `docs/aws/kms-live-verification.md` y
 `packages/signing/test/integration/kms-live.integration.test.ts`.
 
-**`createTenantSigningKey` (import de clave, ADR-0006) — probado contra un `KMSClient` falso con
-validación criptográfica completa** (`test/kms-tenant-key-import.test.ts`: desenvuelve el material
-enviado a `ImportKeyMaterial` con la llave privada de wrapping local y confirma que coincide byte
-a byte con la clave privada original), pero **pendiente de la corrida en vivo contra AWS real**
-al momento de escribir esto — el test ya existe
-(`test/integration/kms-tenant-key-import-live.integration.test.ts`, mismo patrón que
-`kms-live.integration.test.ts`), falta ejecutarlo — ver `docs/aws/kms-live-verification.md`,
-Paso 4b.
+**`createTenantSigningKey` (import de clave, ADR-0006) verificado en vivo contra AWS KMS real**
+(2026-08-03) — no solo contra un `KMSClient` falso ni contra vectores de prueba. La corrida real:
+generó una clave RSA-2048 local (simulando la clave privada real de un tenant), creó una CMK
+dedicada (`Origin: EXTERNAL`), la importó con el procedimiento completo de
+`RSA_AES_KEY_WRAP_SHA_256` (AES-KWP + RSA-OAEP-SHA-256, `aes-kwp.ts`), firmó un mensaje con
+`KmsSigner` usando esa CMK, y verificó la firma contra la llave pública **original** del tenant
+(no una obtenida de KMS) — confirma que KMS importó y usa exactamente la clave privada enviada, no
+una generada por error. Limpieza confirmada después (`ScheduleKeyDeletion`). Detalle completo en
+`docs/aws/kms-live-verification.md` Paso 4b y
+`packages/signing/test/integration/kms-tenant-key-import-live.integration.test.ts`. También sigue
+probado contra un `KMSClient` falso con validación criptográfica completa
+(`test/kms-tenant-key-import.test.ts`), que se mantiene como test rápido/reproducible en CI sin
+tocar AWS real.
 
 ## Cómo correr los tests
 

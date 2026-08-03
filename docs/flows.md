@@ -32,8 +32,8 @@ está construido, probado, y validado contra el servicio real de SUNAT (no simul
   criptográfica con otros tenants (corrige el diseño original de ADR-0003, que sí la compartía).
   El import de la clave privada real usa AES Key Wrap con Padding (RFC 5649), implementado a mano
   y validado contra los vectores de prueba oficiales del RFC — ver `packages/signing/README.md`.
-  Probado de punta a punta con un `KMSClient` falso (validación criptográfica completa del
-  wrapping); pendiente la corrida en vivo contra AWS real.
+  Verificado en vivo contra AWS KMS real (2026-08-03): CMK creada e importada de verdad, firma
+  verificada contra la llave pública original del tenant, limpieza confirmada.
 
 Lo que el SDD describe y **todavía no existe**:
 
@@ -135,10 +135,10 @@ qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
 
 1. **Multi-tenant real — hecho (ADR-0004, ADR-0005, ADR-0006)**: `apps/api` autentica por API key,
    resuelve `TenantConfig` real vía `TenantRegistry`, y cada tenant puede registrar su propio
-   certificado con su propia CMK dedicada en KMS (`POST /v1/tenants/{id}/certificate`). Pendiente
-   dentro de este punto: la corrida en vivo del import de clave contra AWS real (el código está
-   probado con validación criptográfica completa contra un `KMSClient` falso, ver
-   `packages/signing/README.md`), y soporte de `.pfx`/PKCS#12 (hoy solo PEM separado).
+   certificado con su propia CMK dedicada en KMS (`POST /v1/tenants/{id}/certificate`) — incluyendo
+   la corrida en vivo del import de clave contra AWS real (2026-08-03, ver
+   `packages/signing/README.md`). Pendiente dentro de este punto: soporte de `.pfx`/PKCS#12 (hoy
+   solo PEM separado) y respaldar `TenantRegistry` en DynamoDB en vez de memoria del proceso.
 2. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
    DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
    `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por

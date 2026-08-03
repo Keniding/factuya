@@ -30,8 +30,8 @@ tenants) y documentación interactiva en `GET /docs` — cuatro corridas consecu
 beta, todas `ACCEPTED` con CDR real. Cada tenant puede darse de alta con su **propio certificado
 real** y su **propia CMK dedicada** en AWS KMS (`POST /v1/tenants/{id}/certificate`,
 ADR-0005/ADR-0006 — no comparte identidad criptográfica con otros tenants). `KmsSigner`
-(`packages/signing`) verificado en vivo contra AWS KMS real — ver
-`docs/aws/kms-live-verification.md`.
+(`packages/signing`) y el import real de la clave privada del tenant a su CMK están **verificados
+en vivo contra AWS KMS real** — ver `docs/aws/kms-live-verification.md`.
 
 ```bash
 bun install
@@ -41,7 +41,6 @@ bun run test:integration     # incluye la prueba contra SUNAT beta real (requier
 bun run apps/api/src/index.ts # levanta la API en :3000 — documentación interactiva en /docs
 ```
 
-Pendiente (orden de dependencia completo en `docs/flows.md`): la corrida en vivo del import de
-clave de tenant contra AWS real, soporte de `.pfx`/PKCS#12, infraestructura como código
-(Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de crédito/débito, webhooks, y
-el adaptador `co-factus` (Colombia, fase 2).
+Pendiente (orden de dependencia completo en `docs/flows.md`): soporte de `.pfx`/PKCS#12,
+infraestructura como código (Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de
+crédito/débito, webhooks, y el adaptador `co-factus` (Colombia, fase 2).

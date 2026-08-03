@@ -6,10 +6,10 @@ qué servicio de AWS existe hoy de verdad en la cuenta, cuál está solo diseña
 sin construir, y en qué orden se van a ir levantando. Es un **documento vivo** — se actualiza cada
 vez que se construye o verifica una pieza nueva, en vez de dejar cada avance como una nota suelta.
 
-Versión 0.3 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
+Versión 0.4 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
 día con multi-tenant real en `apps/api` (ADR-0004). 2026-08-03: corregido el diseño de KMS (ADR-0005
-reemplaza ADR-0003 — una CMK por tenant, no compartida) y agregado el import de clave real por
-tenant (ADR-0006).
+reemplaza ADR-0003 — una CMK por tenant, no compartida), agregado el import de clave real por
+tenant (ADR-0006), y confirmada la corrida en vivo de ese import contra AWS KMS real.
 
 ## Relación con el resto de `docs/`
 
@@ -47,7 +47,7 @@ tenant (ADR-0006).
 | Servicio AWS | Rol en la arquitectura (SDD §5) | Estado | Evidencia |
 |---|---|---|---|
 | IAM | Usuario de desarrollo con permisos mínimos por pieza | **Verificado en vivo** | Usuario `factuya-dev` creado, sin acceso a consola, policies acotadas por servicio (ver `docs/aws/kms-live-verification.md` Paso 1) |
-| KMS | Firma de comprobantes (`KmsSigner`); una CMK dedicada por tenant, con import de su clave privada real (ADR-0005/ADR-0006) | **Parcialmente verificado en vivo** — el mecanismo de firma (`Sign`) sí corrió contra AWS real (2026-08-02); el import de clave real de un tenant (`GetParametersForImport`/`ImportKeyMaterial`) está probado contra un `KMSClient` falso con validación criptográfica completa, pendiente la corrida en vivo | `docs/aws/kms-live-verification.md` Paso 4 (firma, PASS) y Paso 4b (import, pendiente) |
+| KMS | Firma de comprobantes (`KmsSigner`); una CMK dedicada por tenant, con import de su clave privada real (ADR-0005/ADR-0006) | **Verificado en vivo** — tanto la firma (`Sign`, 2026-08-02) como el import de clave real de un tenant (`GetParametersForImport`/`ImportKeyMaterial`, 2026-08-03) corrieron contra AWS real | `docs/aws/kms-live-verification.md` Paso 4 (firma, PASS) y Paso 4b (import, PASS) |
 | Lambda | `IngestHandler`, `BuildDocument`, `SignDocument`, `SubmitToSunat`, `PollStatus`, `StoreResult`, `NotifyTenant` | No iniciado | — |
 | Step Functions | Orquestación del flujo de emisión (`InvoiceEmissionWorkflow`, Standard) | No iniciado | — |
 | API Gateway (HTTP API) | Reemplazo de `apps/api` (`Bun.serve`) por el ingreso real de producción, con auth por tenant | No iniciado — `apps/api` hoy es un proceso Bun de desarrollo, no Lambda detrás de API Gateway | — |
@@ -66,17 +66,15 @@ nueva cada vez que se verifica una pieza más de la tabla de arriba.
 | Fecha | Servicio | Qué se verificó | Resultado |
 |---|---|---|---|
 | 2026-08-02 | KMS | `CreateKey` (RSA_2048, SIGN_VERIFY), `CreateGrant` (Sign-only), `Sign` vía `KmsSigner`, verificación de la firma con `crypto.verify()` contra `GetPublicKey`, `RetireGrant` + `ScheduleKeyDeletion` | PASS — ver `packages/signing/test/integration/kms-live.integration.test.ts` |
+| 2026-08-03 | KMS | `CreateKey` (`Origin: EXTERNAL`), `GetParametersForImport`, wrapping AES-KWP (RFC 5649) + RSA-OAEP-SHA-256 hecho a mano, `ImportKeyMaterial`, `Sign` vía `KmsSigner` con la clave importada, verificación de la firma contra la llave pública **original** del tenant, `ScheduleKeyDeletion` | PASS — ver `packages/signing/test/integration/kms-tenant-key-import-live.integration.test.ts` |
 
 ## Próxima pieza a construir
 
-**Multi-tenant real en `apps/api` ya está hecho** (ADR-0004/0005/0006): autenticación por API Key,
-resolución de `TenantConfig` vía `TenantRegistry`, aislamiento real entre tenants, y cada tenant
-con su propia CMK dedicada + import de su clave privada real — ver `apps/api/README.md`. Pendiente
-inmediato: correr `kms-tenant-key-import-live.integration.test.ts` contra AWS real (requiere
-agregar `kms:GetParametersForImport`/`kms:ImportKeyMaterial` a `FactuyaDevKmsSignerPolicy` — ver
-`docs/aws/kms-live-verification.md` Paso 1b/4b). `LocalTenantRegistry` sigue en memoria del
-proceso, no respaldado en DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba,
-todavía "No iniciado".
+**Multi-tenant real en `apps/api` ya está hecho y verificado en vivo** (ADR-0004/0005/0006):
+autenticación por API Key, resolución de `TenantConfig` vía `TenantRegistry`, aislamiento real
+entre tenants, y cada tenant con su propia CMK dedicada + import de su clave privada real — ver
+`apps/api/README.md`. `LocalTenantRegistry` sigue en memoria del proceso, no respaldado en
+DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba, todavía "No iniciado".
 
 Después de eso, según el orden de dependencia de `docs/flows.md`, sigue **infraestructura como
 código** (CDK o Terraform, a decidir con su propio ADR si la elección no es obvia) para empezar a

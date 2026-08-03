@@ -145,10 +145,9 @@ lo apunta a `/openapi.yaml`, servido por este mismo proceso. Con el servidor cor
   pierde al reiniciar. Producción necesita DynamoDB (ver `docs/aws/aws-infrastructure-sdd.md`).
 - `POST /v1/tenants/{id}/certificate` no soporta `.pfx`/PKCS#12 — solo certificado y clave privada
   en PEM por separado (ver ADR-0006).
-- La import de clave real (`createTenantSigningKey`) está probada de punta a punta contra un
-  `KMSClient` falso (con validación criptográfica completa del wrapping, no solo mocks de
-  llamadas), pero **pendiente de una corrida en vivo contra AWS real** al momento de escribir esto
-  — ver `docs/aws/kms-live-verification.md`, Paso 4b.
+- La import de clave real (`createTenantSigningKey`) está **verificada en vivo contra AWS KMS
+  real** (2026-08-03) — no solo contra un `KMSClient` falso — ver
+  `docs/aws/kms-live-verification.md`, Paso 4b, y `packages/signing/README.md`.
 - La API key de administrador es un mecanismo temporal — no reemplaza un sistema de roles/permisos
   real, que debe diseñarse antes de producción.
 - No hay notas de crédito/débito, guías de remisión, ni flujo asíncrono (`sendSummary`).
