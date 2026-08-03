@@ -9,7 +9,7 @@
     "packages/adapters/*"
   ],
   "scripts": {
-    "typecheck": "tsc6 --build --pretty",
+    "typecheck": "tsc6 --build --pretty && tsc6 -p tsconfig.tests.json --pretty",
     "test": "bun test",
     "test:integration": "bun test --timeout 30000 packages/adapters/pe-sunat/test/integration packages/signing/test/integration"
   },

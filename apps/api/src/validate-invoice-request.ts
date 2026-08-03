@@ -137,8 +137,12 @@ function parseTax(value: unknown, index: number): TaxSummary {
  * Parsea y valida el body de POST /v1/invoices contra InvoiceRequest. Solo INVOICE está
  * soportado en este MVP (ver PeSunatAdapter.build) — se valida aquí para devolver un 400 claro
  * en vez de dejar que el error aparezca más adentro del pipeline como un 502.
+ *
+ * `tenantId` viene del tenant ya autenticado (ver ADR-0004/auth.ts), nunca del cuerpo de la
+ * solicitud — un cliente nunca puede hacerse pasar por otro tenant escribiendo un `tenantId`
+ * distinto en el JSON.
  */
-export function parseInvoiceRequest(body: unknown): InvoiceRequest {
+export function parseInvoiceRequest(body: unknown, tenantId: string): InvoiceRequest {
   const v = asRecord(body, "body");
 
   if (v.documentType !== "INVOICE") {
@@ -163,7 +167,7 @@ export function parseInvoiceRequest(body: unknown): InvoiceRequest {
   }
 
   return stripUndefined<InvoiceRequest>({
-    tenantId: isNonEmptyString(v.tenantId) ? v.tenantId : "dev-tenant",
+    tenantId,
     documentType: "INVOICE",
     series: typeof v.series === "string" ? v.series : undefined,
     issueDate: v.issueDate,

@@ -2,18 +2,16 @@ import { PeSunatAdapter } from "@factuya/adapter-pe-sunat";
 import { LocalPemKeySigner } from "@factuya/signing";
 import type { TenantConfig } from "@factuya/shared-types";
 import { generateDevCertificate } from "./dev-certificate";
+import { generateApiKey } from "./api-key";
+import { LocalTenantRegistry } from "./tenant-registry";
 
 /**
- * Configuración de un único tenant de desarrollo, resuelta desde variables de entorno con
- * defaults que apuntan al ambiente beta real de SUNAT (credenciales públicas de prueba
- * documentadas en docs/adapters/pe-sunat.md, no un secreto).
- *
- * LIMITACIÓN DELIBERADA (ver docs/flows.md, "qué falta"): esto NO es el enrutamiento multi-tenant
- * real que describe docs/sdd/factuya-sdd.md §5/§9 — no hay resolución de tenant por API key, no
- * hay certificados por tenant en KMS/Secrets Manager, y el certificado se genera efímero en cada
- * arranque del proceso. Es la configuración mínima real para que `apps/api` pueda emitir un
- * comprobante de verdad contra SUNAT en desarrollo local, no una simulación de la arquitectura
- * multi-tenant de producción.
+ * Ver ADR-0004: multi-tenant real vía LocalTenantRegistry (dev) — reemplaza el `devTenant` fijo
+ * que existía antes. El mecanismo de autenticación/resolución ya es el real (Bearer API key,
+ * hash SHA-256, TenantRegistry inyectable); lo que sigue siendo de desarrollo es la
+ * implementación en memoria y que todos los tenants sembrados comparten el mismo certificado/
+ * `Signer` (el flujo real de "cada tenant sube o registra su propio certificado" es
+ * `POST /v1/tenants/{id}/certificate`, fuera de alcance de ADR-0004 — ver docs/flows.md).
  */
 
 const SUNAT_ENDPOINT_URL =
@@ -26,7 +24,7 @@ const ISSUER_LEGAL_NAME = process.env.SUNAT_ISSUER_NAME ?? "EMPRESA DEMO SAC";
 const devCertificate = generateDevCertificate();
 const devSigner = new LocalPemKeySigner(devCertificate.privateKeyPem, devCertificate.publicCertPem);
 
-export const devTenant: TenantConfig = {
+const devTenant: TenantConfig = {
   tenantId: "dev-tenant",
   country: "PE",
   submissionChannel: "SUNAT_DIRECT",
@@ -34,8 +32,19 @@ export const devTenant: TenantConfig = {
   certificate: { publicCertificatePem: devCertificate.publicCertPem, signerRef: "local-dev-ephemeral" },
 };
 
+export const tenantRegistry = new LocalTenantRegistry();
+
+const devApiKey = process.env.FACTUYA_DEV_API_KEY ?? generateApiKey();
+tenantRegistry.register(devApiKey, devTenant);
+
 export const peSunatAdapter = new PeSunatAdapter({
   endpointUrl: SUNAT_ENDPOINT_URL,
   signer: devSigner,
   credentials: { ruc: SUNAT_RUC, solUser: SUNAT_SOL_USER, solPassword: SUNAT_SOL_PASSWORD },
 });
+
+export function logDevTenantInfo(): void {
+  console.log(`Tenant de desarrollo: ${devTenant.tenantId} (RUC ${devTenant.issuer.taxId}, canal ${devTenant.submissionChannel})`);
+  console.log(`API key de desarrollo: ${devApiKey}`);
+  console.log(`Usar con: Authorization: Bearer ${devApiKey}`);
+}

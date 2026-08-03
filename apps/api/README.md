@@ -25,8 +25,17 @@ bun run apps/api/src/index.ts
 
 Por defecto arranca en `http://localhost:3000`, genera un certificado autofirmado efímero (solo
 para desarrollo — ver `src/dev-certificate.ts`), y usa las credenciales públicas de prueba de
-SUNAT beta (RUC `20000000001`, usuario SOL `MODDATOS`). Se puede sobreescribir con variables de
-entorno:
+SUNAT beta (RUC `20000000001`, usuario SOL `MODDATOS`). Al arrancar, imprime en consola la **API
+key del tenant de desarrollo** — necesaria para llamar cualquier endpoint bajo `/v1/` (ver
+"Autenticación" abajo):
+
+```
+Tenant de desarrollo: dev-tenant (RUC 20000000001, canal SUNAT_DIRECT)
+API key de desarrollo: fty_...
+Usar con: Authorization: Bearer fty_...
+```
+
+Variables de entorno:
 
 | Variable | Default |
 |---|---|
@@ -36,21 +45,46 @@ entorno:
 | `SUNAT_SOL_USER` | `MODDATOS` |
 | `SUNAT_SOL_PASSWORD` | `moddatos` |
 | `SUNAT_ISSUER_NAME` | `EMPRESA DEMO SAC` |
+| `FACTUYA_DEV_API_KEY` | Generada aleatoriamente en cada arranque si no se define |
+
+## Autenticación (ADR-0004)
+
+Todo endpoint bajo `/v1/invoices*` exige `Authorization: Bearer <api_key>`. `/health`, `/docs`,
+`/openapi.yaml`, `/vendor/*`, y `/v1/catalogs/*` son públicas a propósito. El tenant se resuelve
+de la API key (hash SHA-256, comparación en tiempo constante — `src/api-key.ts`) contra un
+`TenantRegistry` (`src/tenant-registry.ts`) — hoy `LocalTenantRegistry`, en memoria del proceso,
+sembrado con un único tenant de desarrollo (ver limitaciones abajo). Un tenant nunca puede leer un
+comprobante creado por otro (`GET /v1/invoices/{id}` de un id ajeno devuelve 404, no 403 — para no
+revelar que el id existe).
+
+Probarlo con `curl`:
+
+```bash
+curl -X POST http://localhost:3000/v1/invoices \
+  -H "Authorization: Bearer <la key impresa al arrancar>" \
+  -H "Content-Type: application/json" \
+  -d '{ "documentType": "INVOICE", ... }'
+```
+
+O desde `GET /docs` (Scalar) — el botón de autenticación de la UI acepta pegar la key directamente
+y prueba los endpoints protegidos desde el navegador sin configuración adicional.
 
 ## Rutas implementadas
 
-- `POST /v1/invoices` — emite una Factura. Responde **201 síncrono** con el resultado final (no
-  202 + webhook, porque el adaptador SUNAT de este MVP solo implementa el flujo síncrono
-  `sendBill` — ver `docs/adapters/pe-sunat.md`).
-- `GET /v1/invoices/{id}` — consulta un comprobante ya emitido (store en memoria del proceso, se
-  pierde al reiniciar — producción necesita DynamoDB, no implementado aquí).
-- `GET /v1/catalogs/{country}/{catalog}` — solo `PE`, y solo los catálogos mínimos que el MVP
-  soporta (`document-types`, `identity-document-types`, `tax-affectation`) — no el catálogo
+- `POST /v1/invoices` *(requiere auth)* — emite una Factura. Responde **201 síncrono** con el
+  resultado final (no 202 + webhook, porque el adaptador SUNAT de este MVP solo implementa el
+  flujo síncrono `sendBill` — ver `docs/adapters/pe-sunat.md`).
+- `GET /v1/invoices/{id}` *(requiere auth)* — consulta un comprobante ya emitido por el mismo
+  tenant (store en memoria del proceso, se pierde al reiniciar — producción necesita DynamoDB, no
+  implementado aquí).
+- `GET /v1/catalogs/{country}/{catalog}` *(pública)* — solo `PE`, y solo los catálogos mínimos que
+  el MVP soporta (`document-types`, `identity-document-types`, `tax-affectation`) — no el catálogo
   oficial completo de SUNAT.
-- `GET /health` — liveness.
-- `GET /docs` — documentación interactiva (Scalar API Reference) generada desde `openapi.yaml`.
-- `GET /openapi.yaml` — el spec OpenAPI 3.1 crudo, fiel a lo realmente implementado (no
-  aspiracional).
+- `GET /health` *(pública)* — liveness.
+- `GET /docs` *(pública)* — documentación interactiva (Scalar API Reference) generada desde
+  `openapi.yaml`.
+- `GET /openapi.yaml` *(pública)* — el spec OpenAPI 3.1 crudo, fiel a lo realmente implementado
+  (no aspiracional), con el `securityScheme` `bearerAuth` documentado.
 
 ## Documentación interactiva (Scalar)
 
@@ -62,9 +96,13 @@ lo apunta a `/openapi.yaml`, servido por este mismo proceso. Con el servidor cor
 
 ## Qué NO hace todavía (ver docs/flows.md para el detalle completo)
 
-- No hay multi-tenant real: un único tenant de desarrollo resuelto por variables de entorno, no
-  por API key/autenticación.
-- No hay `KmsSigner` real (certificado efímero autofirmado en cada arranque — solo válido porque
-  SUNAT beta no exige certificado registrado).
+- La autenticación multi-tenant ya es real (ADR-0004), pero `LocalTenantRegistry` es en memoria
+  del proceso — se pierde al reiniciar, y no hay endpoint para dar de alta un tenant en caliente
+  (`POST /v1/tenants/{id}/certificate` del SDD §7 sigue sin implementar). Producción necesita
+  DynamoDB (ver `docs/aws/aws-infrastructure-sdd.md`).
+- Todos los tenants sembrados comparten el mismo certificado/`Signer` (el certificado efímero de
+  `dev-certificate.ts`) — cada tenant tiene su propia identidad en el UBL (`issuer`), pero no
+  todavía su propia custodia de clave privada. `KmsSigner` ya existe y está verificado en vivo
+  contra AWS KMS (`packages/signing/README.md`), falta conectarlo aquí por tenant.
 - No hay notas de crédito/débito, guías de remisión, ni flujo asíncrono (`sendSummary`).
 - No hay persistencia real (DynamoDB/S3) — el store de comprobantes es un `Map` en memoria.

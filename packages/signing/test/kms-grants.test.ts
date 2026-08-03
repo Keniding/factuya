@@ -12,7 +12,7 @@ describe("createTenantGrant", () => {
     let capturedInput: Record<string, unknown> | undefined;
     const client = fakeKmsClient((command) => {
       expect(command).toBeInstanceOf(CreateGrantCommand);
-      capturedInput = (command as CreateGrantCommand).input as Record<string, unknown>;
+      capturedInput = (command as CreateGrantCommand).input as unknown as Record<string, unknown>;
       return { GrantId: "grant-123", GrantToken: "token-abc" };
     });
 
@@ -50,7 +50,7 @@ describe("retireTenantGrant", () => {
     let capturedInput: Record<string, unknown> | undefined;
     const client = fakeKmsClient((command) => {
       expect(command).toBeInstanceOf(RetireGrantCommand);
-      capturedInput = (command as RetireGrantCommand).input as Record<string, unknown>;
+      capturedInput = (command as RetireGrantCommand).input as unknown as Record<string, unknown>;
       return {};
     });
 

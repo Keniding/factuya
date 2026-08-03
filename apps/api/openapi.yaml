@@ -11,8 +11,12 @@ info:
     - `POST /v1/invoices` responde de forma síncrona (201 con el resultado final), no 202 +
       webhook, porque el adaptador SUNAT de este MVP solo implementa el flujo síncrono
       (`sendBill`).
-    - Un único tenant de desarrollo (variables de entorno, certificado efímero) — no hay
-      resolución de tenant por API key ni certificados por tenant en KMS todavía.
+    - Multi-tenant real por API key (ver ADR-0004): todo `/v1/invoices*` exige
+      `Authorization: Bearer <api_key>`, resuelta contra un `TenantRegistry` — hoy una
+      implementación en memoria (`LocalTenantRegistry`) sembrada con un tenant de desarrollo al
+      arrancar el servidor (certificado efímero) — no DynamoDB todavía, y todos los tenants
+      sembrados comparten el mismo certificado/`Signer` (el flujo de que cada tenant traiga su
+      propio certificado, `POST /v1/tenants/{id}/certificate`, no está implementado).
     - Solo Factura (`documentType: "INVOICE"`) — notas de crédito/débito no están implementadas.
     - Los catálogos expuestos son el subconjunto mínimo que el MVP soporta, no el catálogo
       oficial completo de SUNAT.
@@ -58,12 +62,13 @@ paths:
       operationId: createInvoice
       tags: [invoices]
       summary: Emitir un comprobante electrónico
+      security:
+        - bearerAuth: []
       description: >
         Arma el UBL 2.1, firma con XMLDSig, envía a SUNAT (sendBill síncrono) y devuelve el
-        resultado normalizado ya con la respuesta real de SUNAT (CDR). El tenant, certificado y
-        credenciales SOL se resuelven del lado del servidor (variables de entorno de desarrollo,
-        ver apps/api/README.md) — el campo `tenantId` del cuerpo se acepta pero no se usa todavía
-        para enrutar a un tenant real.
+        resultado normalizado ya con la respuesta real de SUNAT (CDR). El tenant se resuelve de la
+        API key (`Authorization: Bearer`, ver ADR-0004) — no hay campo `tenantId` en el cuerpo,
+        un cliente nunca puede hacerse pasar por otro tenant escribiéndolo en el JSON.
       requestBody:
         required: true
         content:
@@ -128,6 +133,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Falta el header Authorization, o la API key no es válida
+          headers:
+            WWW-Authenticate:
+              schema: { type: string, enum: [Bearer] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "502":
           description: >
             SUNAT (o el proxy delante de SUNAT beta) devolvió un error de transporte o un SOAP
@@ -143,10 +157,14 @@ paths:
       operationId: getInvoice
       tags: [invoices]
       summary: Consultar un comprobante emitido previamente
+      security:
+        - bearerAuth: []
       description: >
         Lee de un store en memoria del proceso — se pierde en cada reinicio del servidor de
         desarrollo. Producción necesita DynamoDB (ver docs/sdd/factuya-sdd.md §11, no
-        implementado en este MVP).
+        implementado en este MVP). Un comprobante solo es visible para la API key del tenant que
+        lo creó (ver ADR-0004) — cualquier otro tenant recibe 404, no 403, para no revelar que el
+        id existe.
       parameters:
         - name: id
           in: path
@@ -162,8 +180,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoredInvoiceResponse"
+        "401":
+          description: Falta el header Authorization, o la API key no es válida
+          headers:
+            WWW-Authenticate:
+              schema: { type: string, enum: [Bearer] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: No existe un comprobante con ese id
+          description: No existe un comprobante con ese id, o pertenece a otro tenant
           content:
             application/json:
               schema:
@@ -212,6 +239,15 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        API key con prefijo `fty_` (ver ADR-0004). El servidor de desarrollo imprime la del
+        tenant sembrado al arrancar (`bun run apps/api/src/index.ts`) — usarla como
+        `Authorization: Bearer fty_...`. Scalar (`GET /docs`) permite pegarla y probar los
+        endpoints protegidos directamente desde el navegador.
   schemas:
     PartyAddress:
       type: object
@@ -290,9 +326,6 @@ components:
       type: object
       required: [documentType, issueDate, currency, issuer, customer, lines, taxes]
       properties:
-        tenantId:
-          type: string
-          description: Aceptado pero no usado para enrutar a un tenant real en este MVP.
         documentType:
           type: string
           enum: [INVOICE]

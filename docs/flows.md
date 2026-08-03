@@ -23,14 +23,21 @@ está construido, probado, y validado contra el servicio real de SUNAT (no simul
   firma real verificada con `crypto.verify()` contra la llave pública real de KMS, limpieza
   confirmada después (ver `docs/aws/kms-live-verification.md` y
   `packages/signing/README.md`).
+- Multi-tenant real en `apps/api` (ADR-0004): autenticación `Authorization: Bearer <api_key>`,
+  hash SHA-256 + comparación en tiempo constante, resolución de `TenantConfig` vía `TenantRegistry`
+  inyectable, y aislamiento real entre tenants (un tenant nunca puede leer un comprobante de otro
+  — ver `apps/api/README.md`). La implementación del registro (`LocalTenantRegistry`) sigue siendo
+  en memoria del proceso, no DynamoDB — y todos los tenants sembrados comparten el mismo
+  certificado/`Signer`, no custodia de clave por tenant todavía.
 
 Lo que el SDD describe y **todavía no existe**:
 
 - Ninguna infraestructura de AWS real más allá de KMS: no hay Lambda, Step Functions, CloudHSM,
   DynamoDB, S3, SQS, ni EventBridge desplegados o siquiera como código IaC (CDK/Terraform).
   `apps/api` es un servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
-- Multi-tenancy real: un único tenant de desarrollo configurado por variables de entorno, sin
-  autenticación de API, sin resolución de certificado/credenciales por tenant.
+- `POST /v1/tenants/{id}/certificate` (SDD §7) — el flujo para que un tenant real suba/registre su
+  propio certificado y quede con su propia custodia de clave (vía `KmsSigner`, ya verificado en
+  vivo) en vez de compartir el certificado efímero de desarrollo.
 - Notas de crédito/débito, guías de remisión, resúmenes diarios/comunicación de baja (flujo
   asíncrono `sendSummary`/`getStatus`), y SIRE.
 - El adaptador Colombia (`co-factus`) — solo existe como referencia en el SDD, ningún código.
@@ -83,8 +90,10 @@ JSON simple, y todo lo anterior queda resuelto por Factuya:
 1. El sistema cliente (ERP, e-commerce, POS) hace `POST /v1/invoices` a `apps/api` con un
    `InvoiceRequest` agnóstico — sin XML, sin SOAP, sin campos específicos de SUNAT más allá de
    los pocos catálogos mínimos que expone `GET /v1/catalogs/PE/...`.
-2. `apps/api` resuelve el tenant (hoy: configuración fija de desarrollo; en producción: por
-   `tenantId`) y llama a `emitInvoice()` (`packages/core-domain`).
+2. `apps/api` autentica la solicitud (`Authorization: Bearer <api_key>`, ADR-0004), resuelve el
+   `TenantConfig` de esa API key vía `TenantRegistry` (hoy: `LocalTenantRegistry` en memoria, un
+   tenant de desarrollo sembrado; en producción: respaldado en DynamoDB), y llama a
+   `emitInvoice()` (`packages/core-domain`).
 3. `PeSunatAdapter.build()` arma el XML UBL 2.1 completo — namespaces, catálogos,
    `cac:PaymentTerms`, `cac:RegistrationAddress` con el código de establecimiento — sin que el
    llamador tenga que conocer ninguno de esos detalles.
@@ -119,10 +128,12 @@ Para la parte de infraestructura AWS específicamente, `docs/aws/aws-infrastruct
 documento vivo que trackea, servicio por servicio, qué ya está verificado en una cuenta real vs.
 qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
 
-1. **Multi-tenant real**: autenticación por API key/JWT en `apps/api`, resolución de
-   `TenantConfig` por tenant (hoy es una constante), y el endpoint
-   `POST /v1/tenants/{id}/certificate` del SDD §7 (todavía no implementado). Sin esto, todo lo
-   demás sigue siendo de un solo tenant de desarrollo.
+1. **Multi-tenant real — autenticación y resolución ya hechas (ADR-0004), falta el alta de
+   certificado por tenant**: `apps/api` ya autentica por API key y resuelve `TenantConfig` real vía
+   `TenantRegistry` (antes era una constante fija). Lo que falta es
+   `POST /v1/tenants/{id}/certificate` (SDD §7) — el flujo para que cada tenant registre su propio
+   certificado y quede con su propia custodia de clave (`KmsSigner`, ya verificado en vivo) en vez
+   de que todos los tenants sembrados compartan el certificado efímero de desarrollo.
 2. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
    DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
    `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por

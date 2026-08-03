@@ -17,7 +17,7 @@ describe("KmsSigner", () => {
     let capturedInput: Record<string, unknown> | undefined;
     const client = fakeKmsClient((command) => {
       expect(command).toBeInstanceOf(SignCommand);
-      capturedInput = (command as SignCommand).input as Record<string, unknown>;
+      capturedInput = (command as SignCommand).input as unknown as Record<string, unknown>;
       return { Signature: new Uint8Array([9, 9, 9]) };
     });
 
@@ -42,7 +42,7 @@ describe("KmsSigner", () => {
   it("omite GrantTokens si no se provee un grantToken", async () => {
     let capturedInput: Record<string, unknown> | undefined;
     const client = fakeKmsClient((command) => {
-      capturedInput = (command as SignCommand).input as Record<string, unknown>;
+      capturedInput = (command as SignCommand).input as unknown as Record<string, unknown>;
       return { Signature: new Uint8Array([1]) };
     });
 

@@ -49,7 +49,7 @@ packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — mod
 packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
 packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner real (ADR-0003, verificado en vivo)
 packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
-apps/api/                      servidor HTTP real (Bun.serve) + docs interactivas (Scalar en /docs)
+apps/api/                      servidor HTTP real (Bun.serve) + multi-tenant por API Key (ADR-0004) + docs (Scalar en /docs)
 apps/api/openapi.yaml          contrato real de la API — fuente de verdad, no el §7 aspiracional del SDD
 ```
 

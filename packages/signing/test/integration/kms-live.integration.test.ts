@@ -65,7 +65,7 @@ describe("Integración real: KmsSigner contra AWS KMS", () => {
       return;
     }
 
-    const client = new KMSClient({ region: AWS_REGION, profile: AWS_PROFILE });
+    const client = new KMSClient({ region: AWS_REGION, profile: AWS_PROFILE as string });
     let keyId: string | undefined;
     let grantToken: string | undefined;
 

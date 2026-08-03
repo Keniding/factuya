@@ -6,7 +6,8 @@ qué servicio de AWS existe hoy de verdad en la cuenta, cuál está solo diseña
 sin construir, y en qué orden se van a ir levantando. Es un **documento vivo** — se actualiza cada
 vez que se construye o verifica una pieza nueva, en vez de dejar cada avance como una nota suelta.
 
-Versión 0.1 · Empezado 2026-08-02, después de la primera verificación en vivo (KMS).
+Versión 0.2 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
+día con multi-tenant real en `apps/api` (ADR-0004).
 
 ## Relación con el resto de `docs/`
 
@@ -66,8 +67,13 @@ nueva cada vez que se verifica una pieza más de la tabla de arriba.
 
 ## Próxima pieza a construir
 
-Según el orden de dependencia de `docs/flows.md`: **multi-tenant real en `apps/api`** (autenticación
-por API key/JWT, resolución de `TenantConfig` por tenant) antes que cualquier pieza nueva de AWS —
-sin eso, cualquier infraestructura nueva seguiría siendo de un solo tenant de desarrollo. Después:
-**infraestructura como código** (CDK o Terraform, a decidir con su propio ADR si la elección no es
-obvia) para empezar a mover `apps/api` de proceso Bun a Lambda + API Gateway real.
+**Multi-tenant real en `apps/api` ya está hecho** (ADR-0004, 2026-08-02): autenticación por API
+Key, resolución de `TenantConfig` vía `TenantRegistry`, aislamiento real entre tenants — ver
+`apps/api/README.md`. Sigue siendo en memoria del proceso (`LocalTenantRegistry`), no respaldado
+en DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba, todavía "No iniciado".
+
+Según el orden de dependencia de `docs/flows.md`, lo que sigue es **infraestructura como código**
+(CDK o Terraform, a decidir con su propio ADR si la elección no es obvia) para empezar a mover
+`apps/api` de proceso Bun a Lambda + API Gateway real — el usuario IAM `factuya-dev` (permisos
+mínimos) ya existe y se amplía con una policy acotada por cada servicio nuevo, sin ampliar
+`FactuyaDevKmsSignerPolicy`.

@@ -1,6 +1,6 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.5 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.6 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
@@ -11,8 +11,10 @@ Versión 0.5 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/D
 > por ambiente con aislamiento por tenant vía Grants, en vez de una CMK por tenant — decisión
 > motivada por costo a escala, documentada en ADR-0003. v0.5 confirma `KmsSigner` con una corrida
 > real contra AWS KMS (2026-08-02, no solo contra tipos/documentación) — ver
-> `docs/aws/kms-live-verification.md` — y deja de ser la única pieza del MVP sin validar en vivo —
-> ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
+> `docs/aws/kms-live-verification.md` — y deja de ser la única pieza del MVP sin validar en vivo.
+> v0.6 implementa multi-tenant real en `apps/api` (§7, ADR-0004): API Key (no JWT) resuelta vía
+> `TenantRegistry`, con aislamiento real entre tenants — decisión y razones en ADR-0004 — ver
+> `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
 
 ---
 
@@ -129,7 +131,9 @@ del contrato real, servido interactivamente en `GET /docs` vía Scalar) y `docs/
 detalle exacto de qué difiere y por qué. Diferencias principales hoy: `POST /v1/invoices` responde
 **201 síncrono** (no 202 + webhook, el adaptador SUNAT del MVP solo implementa `sendBill`
 síncrono), no existe todavía `POST /v1/invoices/{id}/void` ni `POST /v1/tenants/{id}/certificate`
-ni el webhook, y `GET /v1/catalogs` expone solo el subconjunto mínimo que el MVP soporta.
+ni el webhook, y `GET /v1/catalogs` expone solo el subconjunto mínimo que el MVP soporta. **La
+autenticación "API Key / JWT por tenant" ya está decidida y real**: API Key, no JWT (ADR-0004) —
+`Authorization: Bearer <api_key>` en todo endpoint bajo `/v1/invoices*`.
 
 ```
 POST   /v1/invoices                → emite un comprobante (asíncrono; responde 202 + invoiceId)
@@ -245,21 +249,24 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
-## 17. Estado de implementación (v0.5)
+## 17. Estado de implementación (v0.6)
 
 El modelo de dominio (§6), el puerto `CountryAdapter` (§4), el adaptador `pe-sunat` (Factura,
-flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva), y `KmsSigner`
-(§9, ADR-0003) están implementados y **verificados con corridas reales** (no mockeadas): SUNAT
-beta, `apps/api` contra ese mismo pipeline, y ahora KMS real (CMK creada, Grant `Sign`-only,
-firma verificada con `crypto.verify()` contra la llave pública real). Ver
-`docs/adapters/pe-sunat.md`, `docs/aws/kms-live-verification.md`, y `docs/flows.md` para el
-detalle completo, qué se verificó, y las limitaciones documentadas explícitamente (contador de
-correlativo en memoria en vez de DynamoDB, distinción aceptado-con-observaciones pendiente de
-verificar contra el catálogo oficial de SUNAT).
+flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva y multi-tenant real
+por API Key, ADR-0004), y `KmsSigner` (§9, ADR-0003) están implementados y **verificados con
+corridas reales** (no mockeadas): SUNAT beta, `apps/api` contra ese mismo pipeline (incluyendo el
+aislamiento real entre tenants), y KMS real (CMK creada, Grant `Sign`-only, firma verificada con
+`crypto.verify()` contra la llave pública real). Ver `docs/adapters/pe-sunat.md`,
+`docs/aws/kms-live-verification.md`, `apps/api/README.md`, y `docs/flows.md` para el detalle
+completo, qué se verificó, y las limitaciones documentadas explícitamente (contador de
+correlativo en memoria en vez de DynamoDB, `TenantRegistry` en memoria del proceso en vez de
+DynamoDB, distinción aceptado-con-observaciones pendiente de verificar contra el catálogo oficial
+de SUNAT).
 
 Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
-proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, multi-tenancy real en
-`apps/api` (autenticación, resolución de `TenantConfig` por tenant), notas de crédito/débito,
+proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, `POST
+/v1/tenants/{id}/certificate` (para que cada tenant tenga su propia custodia de clave vía
+`KmsSigner` en vez de compartir el certificado efímero de desarrollo), notas de crédito/débito,
 flujo asíncrono (`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
 
 ---

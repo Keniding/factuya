@@ -24,10 +24,12 @@ MVP: Perú (SUNAT). Arquitectura lista para sumar países (Colombia/Factus-DIAN 
 
 **No está completo al 100%** — ver `docs/flows.md` para el detalle honesto de qué falta. Lo que
 sí es real y está validado con corridas reales (no mockeado): `InvoiceRequest` agnóstico → UBL 2.1
-Factura → firma XMLDSig real → SOAP `sendBill` → CDR parseado → API HTTP (`apps/api`) con
-documentación interactiva en `GET /docs` — cuatro corridas consecutivas contra SUNAT beta, todas
-`ACCEPTED` con CDR real. `KmsSigner` (`packages/signing`, ADR-0003) también está verificado en
-vivo contra AWS KMS real — ver `docs/aws/kms-live-verification.md`.
+Factura → firma XMLDSig real → SOAP `sendBill` → CDR parseado → API HTTP (`apps/api`), con
+**multi-tenant real por API Key** (`Authorization: Bearer`, ADR-0004 — aislamiento real entre
+tenants, no solo un tenant fijo) y documentación interactiva en `GET /docs` — cuatro corridas
+consecutivas contra SUNAT beta, todas `ACCEPTED` con CDR real. `KmsSigner` (`packages/signing`,
+ADR-0003) también está verificado en vivo contra AWS KMS real — ver
+`docs/aws/kms-live-verification.md`.
 
 ```bash
 bun install
@@ -37,6 +39,7 @@ bun run test:integration     # incluye la prueba contra SUNAT beta real (requier
 bun run apps/api/src/index.ts # levanta la API en :3000 — documentación interactiva en /docs
 ```
 
-Pendiente (orden de dependencia completo en `docs/flows.md`): multi-tenant real, infraestructura
-como código (Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de crédito/débito,
-webhooks, y el adaptador `co-factus` (Colombia, fase 2).
+Pendiente (orden de dependencia completo en `docs/flows.md`): `POST /v1/tenants/{id}/certificate`
+(cada tenant con su propia custodia de clave), infraestructura como código
+(Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de crédito/débito, webhooks, y
+el adaptador `co-factus` (Colombia, fase 2).
