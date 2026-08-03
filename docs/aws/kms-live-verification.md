@@ -81,9 +81,26 @@ policy propia**, nueva, no buscar una existente:
 }
 ```
 
-4. "Siguiente" → en la pantalla de revisión, nombrarla exactamente `FactuyaDevKmsSignerPolicy` (se
-   busca por este nombre en el paso siguiente) → "Crear política". Queda guardada como policy
-   "administrada por el cliente" de esta cuenta, no una de AWS.
+4. "Siguiente" → en la pantalla de revisión ("Revisar y crear"), completar:
+   - **Nombre de la política**: `FactuyaDevKmsSignerPolicy`. Si la consola rechaza el nombre con
+     "Los caracteres no son válidos" aunque se vea correcto, es casi siempre un carácter
+     invisible pegado del copiar/pegar (espacio al final, comilla inteligente, etc.) — borrar el
+     campo entero y escribir el nombre a mano en vez de pegarlo.
+   - **Descripción** (opcional, pero déjala — explica el propósito sin depender de que alguien
+     recuerde esta conversación):
+     ```
+     Permisos mínimos para que Factuya (packages/signing/KmsSigner) firme documentos vía AWS KMS,
+     usando una CMK asimétrica compartida por ambiente con aislamiento por tenant vía Grants en vez
+     de una CMK por tenant (ver ADR-0003 del repo). Incluye: crear/describir la CMK, crear y revocar
+     Grants Sign-only por tenant, firmar, obtener la llave pública, y programar el borrado de la CMK.
+     Uso: verificación en vivo de KmsSigner en ambiente dev (docs/aws/kms-live-verification.md).
+     ```
+   - Antes de crear, confirmar que "Permisos definidos en esta política" muestra **KMS — Limitado:
+     Enumerar, Administración de permisos, Leer, Escribir, Etiquetado — Todos los recursos** (así
+     es como la consola resume las 12 acciones del JSON pegado en el paso 3 — si dice otro
+     servicio o "Acceso completo", revisar que el JSON se haya pegado bien).
+   - Clic en "Crear política". Queda guardada como policy "administrada por el cliente" de esta
+     cuenta, no una de AWS.
 5. Volver a la pestaña del asistente de creación de usuario (si se cerró, entrar de nuevo por
    IAM → Users → `factuya-dev` → Add permissions → Attach policies directly).
 6. En el buscador de políticas, esta vez buscar `FactuyaDevKmsSignerPolicy` (el nombre exacto, no
