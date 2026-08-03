@@ -27,14 +27,32 @@ propósito — nunca se commitea.
 
 ## Paso 1 — Crear un usuario IAM dedicado, solo acceso programático
 
-En la consola de AWS: **IAM → Users → Create user**.
+El asistente de creación de usuario de la consola de AWS tiene tres pantallas propias
+("Especificar los detalles de la persona" / "Establecer permisos" / "Revisar y crear") — esta
+sección sigue esas tres pantallas en orden, con lo que hay que hacer en cada una.
 
-- Nombre sugerido: `factuya-dev` (nombrado por *ambiente*, no "test" — coherente con ADR-0003,
+### 1a. IAM → Users → Create user — pantalla "Especificar los detalles de la persona"
+
+- Nombre de usuario: `factuya-dev` (nombrado por *ambiente*, no "test" — coherente con ADR-0003,
   que ya piensa en una CMK compartida por ambiente: dev, staging, producción).
-- **No marcar** "Provide user access to AWS Management Console" — solo necesita acceso
-  programático (CLI/SDK).
-- En permisos, **"Attach policies directly" → "Create policy"**, pegar esta policy en el editor
-  JSON (exactamente las acciones que `KmsSigner`/`kms-grants.ts` necesitan, ni una más):
+- **Dejar sin marcar** "Proporcione acceso de usuario a la consola de administración de AWS" —
+  este usuario solo necesita acceso programático (CLI/SDK), nunca va a iniciar sesión en la
+  consola web.
+- Clic en "Siguiente".
+
+### 1b. Pantalla "Establecer permisos" — crear la policy (todavía no existe en tu cuenta)
+
+Esta cuenta ya trae más de mil policies administradas por AWS para todo tipo de servicios —
+**buscar "Kms" en ese listado no sirve**, va a aparecer algo como `ROSAKMSProviderPolicy` (una
+policy de AWS para un producto completamente distinto — Red Hat OpenShift/ROSA, con una condición
+que exige un tag `red-hat: true` que nuestros recursos nunca van a tener). Hay que **crear una
+policy propia**, nueva, no buscar una existente:
+
+1. Con "Attach policies directly" seleccionado, clic en **"Crear política"** — abre una pestaña
+   nueva.
+2. En esa pestaña, cambiar a la sub-pestaña **JSON** del editor.
+3. Borrar el contenido de ejemplo y pegar exactamente esto (las acciones que `KmsSigner`/
+   `kms-grants.ts` necesitan, ni una más):
 
 ```json
 {
@@ -63,9 +81,20 @@ En la consola de AWS: **IAM → Users → Create user**.
 }
 ```
 
-Nombrar la policy `FactuyaDevKmsSignerPolicy`, terminar de crear el usuario y asignársela.
+4. "Siguiente" → en la pantalla de revisión, nombrarla exactamente `FactuyaDevKmsSignerPolicy` (se
+   busca por este nombre en el paso siguiente) → "Crear política". Queda guardada como policy
+   "administrada por el cliente" de esta cuenta, no una de AWS.
+5. Volver a la pestaña del asistente de creación de usuario (si se cerró, entrar de nuevo por
+   IAM → Users → `factuya-dev` → Add permissions → Attach policies directly).
+6. En el buscador de políticas, esta vez buscar `FactuyaDevKmsSignerPolicy` (el nombre exacto, no
+   "Kms") — debería aparecer bajo "Administrada por el cliente". Marcarla y continuar.
 
-Entrar al usuario → pestaña **Security credentials** → **Create access key** →
+### 1c. Pantalla "Revisar y crear" → generar las access keys
+
+Revisar que el usuario sea `factuya-dev`, sin acceso a consola, con `FactuyaDevKmsSignerPolicy`
+adjunta → "Crear persona".
+
+Entrar al usuario creado → pestaña **Security credentials** → **Create access key** →
 **"Command Line Interface (CLI)"** → confirmar → copiar el Access Key ID y el Secret Access Key.
 **No pegar estos valores en ningún archivo del repo ni en ninguna conversación con un asistente.**
 
