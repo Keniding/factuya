@@ -19,18 +19,21 @@ XMLDSig y no XAdES) y ADR-0003 (por qué una CMK de KMS compartida, no una por t
 Ambas implementan la misma interfaz `Signer`, así que `xml-dsig-signer.ts` (y todo lo que dependa
 de él, como `packages/adapters/pe-sunat`) es agnóstico a cuál se use.
 
-## Estado de verificación de `KmsSigner` — léase antes de asumir que está "100% probado"
+## Estado de verificación de `KmsSigner`
 
-Implementado y probado contra un `KMSClient` **falso** (`packages/signing/test/kms-signer.test.ts`,
-`kms-grants.test.ts`) — confirma que el código arma los parámetros correctos y procesa la
-respuesta correctamente, pero **no** que AWS KMS real firme y acepte esos parámetros como se
-espera. A diferencia de `LocalPemKeySigner` (validado con criptografía real y, a través del
-adaptador SUNAT, contra el servicio real de SUNAT beta), `KmsSigner` no se ha corrido todavía
-contra una cuenta de AWS real. Ver `docs/dependencies/LEDGER.md` y
-`.claude/skills/deps-aws-sdk-client-kms.md` para el detalle exacto de qué falta confirmar antes de
-usarlo en producción, y **`docs/aws/kms-live-verification.md` para el checklist paso a paso** de cómo
-correr esa verificación en vivo (`packages/signing/test/integration/kms-live.integration.test.ts`)
-contra una cuenta de AWS real.
+**Verificado en vivo contra AWS KMS real** (2026-08-02, cuenta de desarrollo dedicada) — no solo
+contra un `KMSClient` falso. La corrida real: creó una CMK asimétrica (`RSA_2048`,
+`SIGN_VERIFY`), un Grant `Sign`-only, firmó un mensaje con `KmsSigner`, y verificó esa firma con
+`crypto.verify()` de Node contra la llave pública real obtenida de KMS — confirmó que
+`RSASSA_PKCS1_V1_5_SHA_256`/`MessageType: RAW` produce exactamente la firma esperada, no solo que
+la llamada no lanzó error. Limpieza confirmada después (`RetireGrant` + `ScheduleKeyDeletion`,
+`KeyState: PendingDeletion`). Detalle completo y reproducible en
+`docs/aws/kms-live-verification.md` (guía pública) y
+`packages/signing/test/integration/kms-live.integration.test.ts` (el test que lo hace).
+
+También sigue probado contra un `KMSClient` falso para los unitarios normales
+(`packages/signing/test/kms-signer.test.ts`, `kms-grants.test.ts`) — eso confirma que el código
+arma los parámetros correctos sin necesidad de credenciales reales en cada corrida de `bun test`.
 
 ## Cómo correr los tests
 

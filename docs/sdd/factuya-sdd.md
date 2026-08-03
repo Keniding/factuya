@@ -1,6 +1,6 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.4 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.5 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
@@ -9,8 +9,10 @@ Versión 0.4 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/D
 > distingue el contrato aspiracional de este documento del contrato real implementado en
 > `apps/api/openapi.yaml`). v0.4 implementa `KmsSigner` real (§9) sobre una CMK de KMS compartida
 > por ambiente con aislamiento por tenant vía Grants, en vez de una CMK por tenant — decisión
-> motivada por costo a escala, documentada en ADR-0003 — ver `docs/flows.md` para el detalle
-> completo y el estado honesto de qué falta.
+> motivada por costo a escala, documentada en ADR-0003. v0.5 confirma `KmsSigner` con una corrida
+> real contra AWS KMS (2026-08-02, no solo contra tipos/documentación) — ver
+> `docs/aws/kms-live-verification.md` — y deja de ser la única pieza del MVP sin validar en vivo —
+> ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
 
 ---
 
@@ -156,7 +158,7 @@ Todo en JSON. El cliente jamás ve XML, SOAP, ni WSDL — eso vive exclusivament
 ## 9. Seguridad y gestión de certificados (crítico, multi-tenant)
 
 - Cada tenant sube su `.pfx`; se cifra en tránsito y en reposo; la clave privada se importa a **AWS KMS (clave asimétrica) o CloudHSM**, nunca queda en S3 ni en variables de entorno de Lambda en texto plano.
-- La operación `Sign()` es una llamada a KMS (`Sign` API, algoritmo `RSASSA_PKCS1_V1_5_SHA_256`, `MessageType: RAW` sobre el `ds:SignedInfo` ya canonicalizado) — la Lambda nunca tiene la clave privada en memoria. Algoritmo confirmado contra los tipos reales de `@aws-sdk/client-kms` — implementado en `packages/signing/src/kms-signer.ts` (ver `packages/signing/README.md` para el estado exacto de verificación: probado contra un `KMSClient` falso, pendiente de una corrida contra AWS real).
+- La operación `Sign()` es una llamada a KMS (`Sign` API, algoritmo `RSASSA_PKCS1_V1_5_SHA_256`, `MessageType: RAW` sobre el `ds:SignedInfo` ya canonicalizado) — la Lambda nunca tiene la clave privada en memoria. Implementado en `packages/signing/src/kms-signer.ts` y **verificado en vivo contra AWS KMS real** (2026-08-02): CMK real creada, Grant `Sign`-only real, firma verificada con `crypto.verify()` contra la llave pública real de KMS — ver `packages/signing/README.md` y `docs/aws/kms-live-verification.md`.
 - Librería de firma XMLDSig para el adaptador `pe-sunat`: ver skill `.claude/skills/deps-xml-crypto.md` (investigada y documentada siguiendo el proceso de §16). Para el adaptador `co-factus` (fase 2) se requiere una librería XAdES-EPES distinta — no reutilizar `xml-crypto` sin extensión, ver ADR-0002.
 - **Aislamiento por tenant: no es una CMK por tenant** (esa lectura literal de una versión anterior de este documento se corrigió — ver ADR-0003). Es **una CMK asimétrica compartida por ambiente** más **un Grant `Sign`-only por tenant** sobre esa misma CMK (`packages/signing/src/kms-grants.ts`) — el costo de KMS crece linealmente con el número de CMKs, no con el número de Grants, y dar de alta/revocar un tenant nunca requiere tocar la CMK ni afecta a otros tenants. Límite real documentado en ADR-0003: el Grant aísla por revocación/auditoría, no porque KMS distinga criptográficamente qué tenant hizo la llamada — la aplicación debe seguir usando el `grantToken` correcto por tenant.
 - Rotación y expiración de certificados: job programado (EventBridge Scheduler) que alerta 30/15/7 días antes del vencimiento del certificado de cada tenant.
@@ -239,30 +241,25 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
-## 17. Estado de implementación (v0.3)
+## 17. Estado de implementación (v0.5)
 
 El modelo de dominio (§6), el puerto `CountryAdapter` (§4), el adaptador `pe-sunat` (Factura,
-flujo síncrono), y `apps/api` (servidor HTTP real con documentación interactiva) están
-implementados y probados con pruebas reales (no mockeadas) — ver `docs/adapters/pe-sunat.md` y
-`docs/flows.md` para el detalle completo, qué se verificó, y las limitaciones documentadas
-explícitamente (contador de correlativo en memoria en vez de DynamoDB, distinción
-aceptado-con-observaciones pendiente de verificar contra el catálogo oficial de SUNAT).
-
-`KmsSigner` (§9, ADR-0003) también está implementado — una CMK asimétrica compartida por ambiente
-más un Grant `Sign`-only por tenant, para que el costo de KMS no crezca linealmente con el número
-de tenants — pero probado solo contra un `KMSClient` falso, no contra una cuenta de AWS real (ver
-`packages/signing/README.md`). Es la única pieza de este MVP en ese estado intermedio: código real
-y verificado contra documentación/tipos oficiales, sin la corrida en vivo que sí tienen SUNAT
-beta y `apps/api`.
+flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva), y `KmsSigner`
+(§9, ADR-0003) están implementados y **verificados con corridas reales** (no mockeadas): SUNAT
+beta, `apps/api` contra ese mismo pipeline, y ahora KMS real (CMK creada, Grant `Sign`-only,
+firma verificada con `crypto.verify()` contra la llave pública real). Ver
+`docs/adapters/pe-sunat.md`, `docs/aws/kms-live-verification.md`, y `docs/flows.md` para el
+detalle completo, qué se verificó, y las limitaciones documentadas explícitamente (contador de
+correlativo en memoria en vez de DynamoDB, distinción aceptado-con-observaciones pendiente de
+verificar contra el catálogo oficial de SUNAT).
 
 Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
-proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, la corrida en vivo de
-`KmsSigner` contra AWS real, multi-tenancy real en `apps/api` (autenticación, resolución de
-`TenantConfig` por tenant), notas de crédito/débito, flujo asíncrono (`sendSummary`/`getStatus`),
-y el adaptador `co-factus` (§12).
+proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, multi-tenancy real en
+`apps/api` (autenticación, resolución de `TenantConfig` por tenant), notas de crédito/débito,
+flujo asíncrono (`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
 
 ---
-*Próximo paso sugerido: correr `KmsSigner` por primera vez contra una CMK real de una cuenta de
-AWS de prueba (crear la CMK, un Grant `Sign`-only, firmar y verificar — ver
-`packages/signing/README.md` para el checklist exacto), y la orquestación Step Functions/Lambda de
-`docs/flows.md`.*
+*Próximo paso sugerido: infraestructura como código (CDK/Terraform) para Step Functions/Lambda —
+ver `docs/flows.md` para el orden de dependencia completo del roadmap. El usuario IAM
+`factuya-dev` (permisos mínimos) ya existe y puede ampliarse con una policy acotada por cada
+pieza nueva de infraestructura, en vez de una policy amplia de una sola vez.*

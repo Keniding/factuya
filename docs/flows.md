@@ -18,17 +18,19 @@ está construido, probado, y validado contra el servicio real de SUNAT (no simul
 - Documentación interactiva de esa API (`GET /docs`, Scalar).
 - Cuatro corridas reales consecutivas contra `e-beta.sunat.gob.pe`, todas con CDR real de SUNAT
   y estado `ACCEPTED` (ver `docs/adapters/pe-sunat.md`).
+- `KmsSigner` (`packages/signing`) verificado en vivo contra AWS KMS real (2026-08-02, cuenta de
+  desarrollo dedicada `factuya-dev`, permisos mínimos): CMK real creada, Grant `Sign`-only real,
+  firma real verificada con `crypto.verify()` contra la llave pública real de KMS, limpieza
+  confirmada después (ver `docs/aws/kms-live-verification.md` y
+  `packages/signing/README.md`).
 
 Lo que el SDD describe y **todavía no existe**:
 
-- Ninguna infraestructura de AWS real: no hay Lambda, Step Functions, KMS, CloudHSM, DynamoDB, S3,
-  SQS, ni EventBridge desplegados o siquiera como código IaC (CDK/Terraform). `apps/api` es un
-  servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
+- Ninguna infraestructura de AWS real más allá de KMS: no hay Lambda, Step Functions, CloudHSM,
+  DynamoDB, S3, SQS, ni EventBridge desplegados o siquiera como código IaC (CDK/Terraform).
+  `apps/api` es un servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
 - Multi-tenancy real: un único tenant de desarrollo configurado por variables de entorno, sin
   autenticación de API, sin resolución de certificado/credenciales por tenant.
-- `KmsSigner` en vivo: la implementación real ya existe (`packages/signing/src/kms-signer.ts`,
-  `kms-grants.ts`, diseño en ADR-0003), probada contra un `KMSClient` falso pero nunca contra una
-  cuenta de AWS real.
 - Notas de crédito/débito, guías de remisión, resúmenes diarios/comunicación de baja (flujo
   asíncrono `sendSummary`/`getStatus`), y SIRE.
 - El adaptador Colombia (`co-factus`) — solo existe como referencia en el SDD, ningún código.
@@ -118,33 +120,27 @@ No es una lista de deseos sin orden — cada paso depende del anterior o desbloq
    `TenantConfig` por tenant (hoy es una constante), y el endpoint
    `POST /v1/tenants/{id}/certificate` del SDD §7 (todavía no implementado). Sin esto, todo lo
    demás sigue siendo de un solo tenant de desarrollo.
-2. **`KmsSigner` — falta la corrida en vivo**: la implementación ya existe
-   (`packages/signing/src/kms-signer.ts` y `kms-grants.ts`), con el `SigningAlgorithm`
-   (`RSASSA_PKCS1_V1_5_SHA_256`) y el diseño de aislamiento por tenant confirmados contra los
-   tipos reales del SDK y documentados en ADR-0003 — pero probada solo contra un `KMSClient` falso
-   (ver `packages/signing/README.md`), no contra AWS real. Falta: crear una CMK asimétrica de
-   prueba en una cuenta de AWS real, un Grant `Sign`-only, y confirmar que la firma resultante es
-   válida (mismo patrón de prueba real que ya se usó para `LocalPemKeySigner`). Depende de tener
-   ya una cuenta de AWS de prueba disponible.
-3. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
+2. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
    DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
    `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por
-   puertos — pero el *empaquetado* y la *orquestación* si son trabajo nuevo completo.
-4. **Persistencia real**: DynamoDB para estado/correlativos por tenant (con locking optimista
+   puertos — pero el *empaquetado* y la *orquestación* si son trabajo nuevo completo. El usuario
+   IAM `factuya-dev` (permisos mínimos, ver `docs/aws/`) ya está creado y puede irse ampliando con
+   una policy acotada por cada pieza nueva, en vez de una policy amplia de una sola vez.
+3. **Persistencia real**: DynamoDB para estado/correlativos por tenant (con locking optimista
    para evitar duplicados bajo concurrencia — hoy el contador es un entero en memoria, solo
    válido para un proceso), S3 para XML/CDR/PDF.
-5. **Flujo asíncrono SUNAT** (`sendSummary`/`getStatus`, resúmenes y bajas) y notas de
+4. **Flujo asíncrono SUNAT** (`sendSummary`/`getStatus`, resúmenes y bajas) y notas de
    crédito/débito — extienden `PeSunatAdapter`, que ya tiene el puerto (`checkStatus`) preparado
    pero sin implementación real todavía.
-6. **Webhooks** (`invoice.status.updated`) — una vez que exista el flujo asíncrono, tiene sentido
+5. **Webhooks** (`invoice.status.updated`) — una vez que exista el flujo asíncrono, tiene sentido
    notificar en vez de solo permitir polling por `GET /v1/invoices/{id}`.
-7. **Adaptador `co-factus` (Colombia)**: el primer adaptador de un segundo país, siguiendo el
+6. **Adaptador `co-factus` (Colombia)**: el primer adaptador de un segundo país, siguiendo el
    mismo proceso de investigación de dependencias (`.claude/agents/dependency-skill-agent.md`)
    para la librería de XAdES-EPES que documenta el SDD §12 como pendiente.
-8. **Observabilidad de producción**: CloudWatch/X-Ray o equivalente, alarmas sobre tickets
-   pendientes — solo tiene sentido una vez que exista el flujo asíncrono real desplegado (punto 5
-   y 3 combinados).
+7. **Observabilidad de producción**: CloudWatch/X-Ray o equivalente, alarmas sobre tickets
+   pendientes — solo tiene sentido una vez que exista el flujo asíncrono real desplegado (punto 4
+   y 2 combinados).
 
-Los pasos 1 a 4 son los que bloquean que Factuya deje de ser "un pipeline validado que corre en
+Los pasos 1 a 3 son los que bloquean que Factuya deje de ser "un pipeline validado que corre en
 un proceso de desarrollo" y pase a ser "un servicio multi-tenant en producción" — son el trabajo
 inmediato siguiente, no una elección arbitraria de prioridad.

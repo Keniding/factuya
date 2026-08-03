@@ -82,3 +82,24 @@ estrategia explícitamente para arquitecturas SaaS multi-tenant como la de Factu
 - Si en el futuro un requisito regulatorio o contractual exigiera aislamiento físico de llave por
   tenant (no solo lógico vía Grant) para algún tenant específico, ese sería un caso excepcional a
   resolver con una CMK dedicada para ese tenant puntual, no un cambio del default para todos.
+
+## Addendum verificado con una corrida real (2026-08-02)
+
+El bullet de arriba sobre "no implementado con una cuenta de AWS real todavía" ya no aplica —
+se corrió una verificación real siguiendo `docs/aws/kms-live-verification.md`, contra un usuario
+IAM dedicado (`factuya-dev`, permisos mínimos, sin acceso a consola) en una cuenta de AWS real:
+
+- CMK asimétrica creada (`RSA_2048`, `SIGN_VERIFY`).
+- Grant `Sign`-only creado para un tenant de prueba (`createTenantGrant`).
+- `KmsSigner.sign()` firmó un mensaje real usando ese Grant.
+- La firma se verificó con `crypto.verify()` de Node contra la llave pública real obtenida de KMS
+  (`GetPublicKey`) — confirma que `RSASSA_PKCS1_V1_5_SHA_256`/`MessageType: RAW` produce
+  exactamente la firma esperada contra el servicio real, no solo que la llamada no lanzó error.
+- Limpieza confirmada después: `RetireGrant` del Grant de prueba, y `ScheduleKeyDeletion` de la
+  CMK — verificado con `DescribeKey` que el estado quedó en `PendingDeletion` (sin costo durante
+  la ventana de espera).
+
+`KmsSigner` y el diseño de Grants de este ADR quedan con el mismo nivel de confianza que el
+adaptador SUNAT (validado contra el servicio real, no solo contra documentación/tipos). Detalle
+completo y reproducible en `docs/aws/kms-live-verification.md` y
+`packages/signing/test/integration/kms-live.integration.test.ts`.

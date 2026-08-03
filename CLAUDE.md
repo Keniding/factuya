@@ -46,7 +46,7 @@ docs/aws/                      guías de verificación contra AWS real (pública
 .claude/skills/deps-*/         skills de dependencias, generadas investigando el paquete real
 packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — modelo agnóstico
 packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
-packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner (ADR-0003, no probado en vivo)
+packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner real (ADR-0003, verificado en vivo)
 packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
 apps/api/                      servidor HTTP real (Bun.serve) + docs interactivas (Scalar en /docs)
 apps/api/openapi.yaml          contrato real de la API — fuente de verdad, no el §7 aspiracional del SDD
