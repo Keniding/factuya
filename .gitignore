@@ -10,6 +10,7 @@ dist/
 
 .idea/
 
-# Notas con valores reales de una cuenta AWS específica — nunca al repo público, ver
-# docs/kms-live-verification.md (la versión sin valores de cuenta, esa sí se commitea).
-docs/kms-live-verification.private.md
+# Notas con valores reales de una cuenta AWS específica — nunca al repo público. Cada guía en
+# docs/aws/ puede tener su companion *.private.md con los valores reales de quien la siga; la
+# versión sin sufijo (sin valores de cuenta) es la que se commitea.
+docs/aws/*.private.md

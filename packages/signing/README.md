@@ -28,7 +28,7 @@ espera. A diferencia de `LocalPemKeySigner` (validado con criptografía real y, 
 adaptador SUNAT, contra el servicio real de SUNAT beta), `KmsSigner` no se ha corrido todavía
 contra una cuenta de AWS real. Ver `docs/dependencies/LEDGER.md` y
 `.claude/skills/deps-aws-sdk-client-kms.md` para el detalle exacto de qué falta confirmar antes de
-usarlo en producción, y **`docs/kms-live-verification.md` para el checklist paso a paso** de cómo
+usarlo en producción, y **`docs/aws/kms-live-verification.md` para el checklist paso a paso** de cómo
 correr esa verificación en vivo (`packages/signing/test/integration/kms-live.integration.test.ts`)
 contra una cuenta de AWS real.
 
@@ -36,5 +36,5 @@ contra una cuenta de AWS real.
 
 ```bash
 bun test packages/signing                # unitarios, incluye KmsSigner contra un KMSClient falso
-bun run test:integration                 # incluye la verificación en vivo si está habilitada (ver docs/kms-live-verification.md)
+bun run test:integration                 # incluye la verificación en vivo si está habilitada (ver docs/aws/kms-live-verification.md)
 ```

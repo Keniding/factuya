@@ -9,7 +9,7 @@ brecha. Sigue el mismo principio de `docs/sdd/factuya-sdd.md` §16: nada se da p
 corrida real.
 
 **No sube nada específico de tu cuenta a este documento.** Los valores reales (ID de cuenta, ARNs,
-nombre de perfil) van en `docs/kms-live-verification.private.md`, que está en `.gitignore` a
+nombre de perfil) van en `docs/aws/kms-live-verification.private.md`, que está en `.gitignore` a
 propósito — nunca se commitea.
 
 ## Antes de empezar

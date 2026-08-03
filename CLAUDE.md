@@ -41,6 +41,7 @@ docs/adr/                      decisiones de arquitectura, numeradas
 docs/policies/                 git-workflow.md, documentation.md
 docs/dependencies/LEDGER.md    toda dependencia externa investigada, con fecha y skill asociada
 docs/adapters/pe-sunat.md      cómo funciona el adaptador SUNAT, qué se verificó y limitaciones
+docs/aws/                      guías de verificación contra AWS real (pública + <tema>.private.md gitignored)
 .claude/agents/                agentes especializados de este repo
 .claude/skills/deps-*/         skills de dependencias, generadas investigando el paquete real
 packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — modelo agnóstico

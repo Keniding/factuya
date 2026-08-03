@@ -8,14 +8,18 @@ Vinculante para todo el monorepo. Referenciada desde `docs/sdd/factuya-sdd.md` �
 docs/
 ├── sdd/                  # el spec vivo — se versiona (v0.1, v0.2, ...) en el propio archivo
 │   └── factuya-sdd.md
+├── flows.md              # flujo sin Factuya / con Factuya / roadmap — estado honesto del proyecto
 ├── adr/                  # decisiones de arquitectura, una por archivo, numeradas
 │   ├── README.md         # índice + plantilla
 │   └── NNNN-titulo.md
 ├── policies/             # este archivo, git-workflow.md, y las que se agreguen
 ├── dependencies/
 │   └── LEDGER.md         # registro de toda dependencia externa investigada
-└── adapters/             # un doc funcional por país, cuando exista el adaptador
-    └── pe-sunat.md
+├── adapters/             # un doc funcional por país, cuando exista el adaptador
+│   └── pe-sunat.md
+└── aws/                  # guías de verificación contra AWS real (ver docs/aws/README.md)
+    ├── README.md         # índice + convención pública/<tema>.private.md (gitignored)
+    └── kms-live-verification.md
 ```
 
 ## 2. Cuándo se requiere cada tipo de documento

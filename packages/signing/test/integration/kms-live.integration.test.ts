@@ -12,7 +12,7 @@ import { createTenantGrant, retireTenantGrant } from "../../src/kms-grants";
 
 /**
  * Prueba de integración REAL contra AWS KMS — sin mocks del SDK. Ver
- * docs/kms-live-verification.md para el paso a paso completo (crear el usuario IAM, configurar el
+ * docs/aws/kms-live-verification.md para el paso a paso completo (crear el usuario IAM, configurar el
  * perfil local) y ADR-0003 para el diseño que esto verifica: una CMK compartida por ambiente +
  * un Grant `Sign`-only por tenant.
  *
@@ -20,7 +20,7 @@ import { createTenantGrant, retireTenantGrant } from "../../src/kms-grants";
  * cuentas configurados (de otros clientes/proyectos) — este test JAMÁS debe correr por accidente
  * ni usar el perfil "default" implícito. Requiere:
  *   1. FACTUYA_KMS_LIVE_TEST=1 — opt-in explícito, porque este test crea recursos reales (con
- *      costo, aunque de centavos — ver docs/kms-live-verification.md).
+ *      costo, aunque de centavos — ver docs/aws/kms-live-verification.md).
  *   2. AWS_PROFILE seteado explícitamente — nunca se asume ningún perfil por default.
  *   3. FACTUYA_KMS_LIVE_TEST_PRINCIPAL_ARN — el ARN del propio usuario IAM (obtenido en el Paso 3
  *      de la guía con `aws sts get-caller-identity`), usado como GranteePrincipal/RetiringPrincipal
@@ -42,17 +42,17 @@ let skipReason = "";
 beforeAll(() => {
   if (!LIVE_TEST_ENABLED) {
     skipReason =
-      "FACTUYA_KMS_LIVE_TEST no está en '1' — este test crea recursos reales en una cuenta de AWS real (ver docs/kms-live-verification.md). Se omite por defecto.";
+      "FACTUYA_KMS_LIVE_TEST no está en '1' — este test crea recursos reales en una cuenta de AWS real (ver docs/aws/kms-live-verification.md). Se omite por defecto.";
     return;
   }
   if (!AWS_PROFILE) {
     skipReason =
-      "AWS_PROFILE no está seteado explícitamente — por seguridad este test nunca usa un perfil implícito (ver docs/kms-live-verification.md, esta máquina puede tener perfiles de otras cuentas).";
+      "AWS_PROFILE no está seteado explícitamente — por seguridad este test nunca usa un perfil implícito (ver docs/aws/kms-live-verification.md, esta máquina puede tener perfiles de otras cuentas).";
     return;
   }
   if (!PRINCIPAL_ARN) {
     skipReason =
-      "FACTUYA_KMS_LIVE_TEST_PRINCIPAL_ARN no está seteado — necesario como GranteePrincipal del Grant de prueba (ver docs/kms-live-verification.md, Paso 3).";
+      "FACTUYA_KMS_LIVE_TEST_PRINCIPAL_ARN no está seteado — necesario como GranteePrincipal del Grant de prueba (ver docs/aws/kms-live-verification.md, Paso 3).";
     return;
   }
   canRun = true;
@@ -74,7 +74,7 @@ describe("Integración real: KmsSigner contra AWS KMS", () => {
         new CreateKeyCommand({
           KeySpec: "RSA_2048",
           KeyUsage: "SIGN_VERIFY",
-          Description: "factuya-dev — CMK efímera de verificación en vivo de KmsSigner, ver docs/kms-live-verification.md",
+          Description: "factuya-dev — CMK efímera de verificación en vivo de KmsSigner, ver docs/aws/kms-live-verification.md",
           Tags: [{ TagKey: "factuya:purpose", TagValue: "kms-signer-live-verification" }],
         }),
       );
