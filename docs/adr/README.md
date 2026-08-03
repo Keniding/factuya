@@ -42,3 +42,4 @@ Usar `NNNN-titulo-corto-en-kebab-case.md`, numeración correlativa. Plantilla:
 | [0004](0004-multi-tenant-api-key-auth.md) | Multi-tenant real en apps/api: API Key (no JWT) resuelta vía TenantRegistry | Aceptado |
 | [0005](0005-kms-one-cmk-per-tenant.md) | KMS: una CMK por tenant (corrige ADR-0003 — lectura incorrecta de la fuente citada) | Aceptado |
 | [0006](0006-tenant-certificate-import.md) | POST /v1/tenants/{id}/certificate: import de la clave real del tenant (RFC 5649 AES-KWP + RSA-OAEP) | Aceptado |
+| [0007](0007-cdk-for-infrastructure-as-code.md) | Infraestructura como código: AWS CDK (TypeScript) sobre Terraform | Aceptado |

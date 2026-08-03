@@ -6,10 +6,11 @@ qué servicio de AWS existe hoy de verdad en la cuenta, cuál está solo diseña
 sin construir, y en qué orden se van a ir levantando. Es un **documento vivo** — se actualiza cada
 vez que se construye o verifica una pieza nueva, en vez de dejar cada avance como una nota suelta.
 
-Versión 0.4 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
+Versión 0.5 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
 día con multi-tenant real en `apps/api` (ADR-0004). 2026-08-03: corregido el diseño de KMS (ADR-0005
 reemplaza ADR-0003 — una CMK por tenant, no compartida), agregado el import de clave real por
-tenant (ADR-0006), y confirmada la corrida en vivo de ese import contra AWS KMS real.
+tenant (ADR-0006), confirmada la corrida en vivo de ese import contra AWS KMS real, y arrancada la
+infraestructura como código con AWS CDK (ADR-0007, `apps/infra`).
 
 ## Relación con el resto de `docs/`
 
@@ -48,6 +49,7 @@ tenant (ADR-0006), y confirmada la corrida en vivo de ese import contra AWS KMS 
 |---|---|---|---|
 | IAM | Usuario de desarrollo con permisos mínimos por pieza | **Verificado en vivo** | Usuario `factuya-dev` creado, sin acceso a consola, policies acotadas por servicio (ver `docs/aws/kms-live-verification.md` Paso 1) |
 | KMS | Firma de comprobantes (`KmsSigner`); una CMK dedicada por tenant, con import de su clave privada real (ADR-0005/ADR-0006) | **Verificado en vivo** — tanto la firma (`Sign`, 2026-08-02) como el import de clave real de un tenant (`GetParametersForImport`/`ImportKeyMaterial`, 2026-08-03) corrieron contra AWS real | `docs/aws/kms-live-verification.md` Paso 4 (firma, PASS) y Paso 4b (import, PASS) |
+| CDK (herramienta de IaC, no un servicio en sí) | Define y sintetiza toda la infraestructura de las filas de abajo (ADR-0007) | **Scaffold sintetizado localmente** — `apps/infra` (`FactuyaInfraStack`, vacío), `cdk synth` verificado sin tocar AWS real; `cdk bootstrap`/`cdk deploy` nunca corridos | `apps/infra/README.md`, ADR-0007, `.claude/skills/deps-aws-cdk-lib.md` |
 | Lambda | `IngestHandler`, `BuildDocument`, `SignDocument`, `SubmitToSunat`, `PollStatus`, `StoreResult`, `NotifyTenant` | No iniciado | — |
 | Step Functions | Orquestación del flujo de emisión (`InvoiceEmissionWorkflow`, Standard) | No iniciado | — |
 | API Gateway (HTTP API) | Reemplazo de `apps/api` (`Bun.serve`) por el ingreso real de producción, con auth por tenant | No iniciado — `apps/api` hoy es un proceso Bun de desarrollo, no Lambda detrás de API Gateway | — |
@@ -75,6 +77,16 @@ autenticación por API Key, resolución de `TenantConfig` vía `TenantRegistry`,
 entre tenants, y cada tenant con su propia CMK dedicada + import de su clave privada real — ver
 `apps/api/README.md`. `LocalTenantRegistry` sigue en memoria del proceso, no respaldado en
 DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba, todavía "No iniciado".
+
+**Infraestructura como código arrancada** (ADR-0007): `apps/infra` sintetiza CloudFormation
+localmente con AWS CDK, sin recursos reales todavía. Dos decisiones explícitas pendientes antes de
+seguir: (1) qué pieza modelar primero dentro del stack — la tabla de DynamoDB para
+`TenantRegistry` es la candidata natural, porque además resuelve la limitación ya documentada de
+`LocalTenantRegistry` en memoria; (2) la policy IAM nueva y acotada para `cdk bootstrap`/`cdk
+deploy` contra la cuenta real — el bootstrap de CDK necesita permisos más amplios que una sola
+pieza de servicio (crea un bucket S3 de assets y roles IAM), documentado como tensión real en
+ADR-0007, no se debe resolver ampliando `FactuyaDevKmsSignerPolicy` ni con una policy de
+administrador.
 
 Después de eso, según el orden de dependencia de `docs/flows.md`, sigue **infraestructura como
 código** (CDK o Terraform, a decidir con su propio ADR si la elección no es obvia) para empezar a

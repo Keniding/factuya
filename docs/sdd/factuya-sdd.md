@@ -1,6 +1,6 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.8 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.9 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
@@ -20,7 +20,9 @@ Versión 0.8 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/D
 > tenant, AES-KWP/RFC 5649 implementado a mano y validado contra los vectores oficiales del RFC) —
 > ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta. v0.8 confirma ese
 > import de clave con una corrida real contra AWS KMS (2026-08-03, no solo contra un `KMSClient`
-> falso) — ver `docs/aws/kms-live-verification.md` Paso 4b.
+> falso) — ver `docs/aws/kms-live-verification.md` Paso 4b. v0.9 arranca la infraestructura como
+> código (ADR-0007: AWS CDK en TypeScript, no Terraform — `apps/infra`, todavía solo un scaffold
+> sintetizado localmente, sin recursos reales ni despliegue contra AWS).
 
 ---
 
@@ -200,7 +202,7 @@ factuya/
 │   │   └── co-factus/          # (fase 2) REST client Factus/DIAN, firma XAdES-EPES
 │   ├── signing/                # wrapper sobre KMS/CloudHSM
 │   └── shared-types/           # tipos compartidos (InvoiceRequest, InvoiceResult...)
-├── infra/                      # IaC (CDK o Terraform) — Lambdas, Step Functions, KMS, DynamoDB, S3
+├── infra/                      # apps/infra en el código real — IaC con AWS CDK (ADR-0007), no Terraform
 ├── .claude/
 │   ├── agents/                 # agentes especializados del repo (ver §16)
 │   └── skills/                 # skills de dependencias + skills de dominio, generadas sin alucinar
@@ -222,7 +224,9 @@ Justificación de monorepo para el MVP: un solo país activo, equipo pequeño, y
 - **Lenguaje**: TypeScript — mejor madurez de librerías de firma XML y mejor cold-start en Lambda que JVM.
 - **Compilador/type-check**: `typescript@6.0.2` (paquete `@typescript/typescript6`) como fuente de verdad para build y CI — **no** `typescript@7.0.2` todavía, porque el ecosistema de tooling (`typescript-eslint`, `ts-jest`/equivalentes, `ts-morph`) aún no soporta la API programática de TS7 (estable recién en TS 7.1, ~oct. 2026). Ver ADR-0001. Se puede correr `tsgo` (TS7 nativo) en paralelo como chequeo rápido no bloqueante en CI, pero no como *source of truth*.
 - **Package manager / runtime de desarrollo**: **Bun** (`bun install`, `bun run`, `bun test`, `bun build`) para todo el monorepo TypeScript — equivalente a lo que `uv` es para Python. **Importante**: Bun **no** es un runtime gestionado oficialmente por AWS Lambda (no existe `provided.bun` como managed runtime). El flujo correcto es: desarrollar/testear/bundlear con Bun, pero **desplegar el artefacto compilado sobre el runtime oficial `nodejs` de Lambda** (Bun solo como custom runtime/layer quedaría descartado para el MVP por complejidad operativa extra en un sistema donde la disponibilidad es crítica). Revisar en cada release de Bun si esto cambia antes de asumir lo contrario.
-- **IaC**: AWS CDK (TypeScript, coherente con el resto del stack) o Terraform si prefieres multi-cloud a futuro.
+- **IaC**: AWS CDK (TypeScript, coherente con el resto del stack) — decidido sobre Terraform en
+  ADR-0007. `apps/infra` ya tiene el scaffold, sintetizado localmente; sin recursos reales ni
+  despliegue todavía.
 - **Orquestación**: Step Functions Standard.
 - **Cola/DLQ**: SQS para reintentos de envíos fallidos a SUNAT (caídas del servicio son frecuentes y documentadas).
 - **Datos**: DynamoDB (estado de comprobantes, series/correlativos con locking optimista para evitar duplicados) + S3 (XML/CDR/PDF).
@@ -268,7 +272,7 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
-## 17. Estado de implementación (v0.8)
+## 17. Estado de implementación (v0.9)
 
 El modelo de dominio (§6), el puerto `CountryAdapter` (§4), el adaptador `pe-sunat` (Factura,
 flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva, multi-tenant real
@@ -285,12 +289,17 @@ en memoria en vez de DynamoDB, `TenantRegistry` en memoria del proceso en vez de
 soporte de `.pfx`/PKCS#12, distinción aceptado-con-observaciones pendiente de verificar contra el
 catálogo oficial de SUNAT).
 
-Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
-proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, soporte de
-`.pfx`/PKCS#12, notas de crédito/débito, flujo asíncrono (`sendSummary`/`getStatus`), y el
-adaptador `co-factus` (§12).
+`apps/infra` (`@factuya/infra`, ADR-0007) existe como scaffold de AWS CDK — un `Stack` vacío,
+`cdk synth` verificado localmente sin tocar AWS real. Ningún recurso de infraestructura real (§5,
+§11) está desplegado todavía.
+
+Pendiente: modelar recursos reales dentro de `apps/infra` y correr `cdk bootstrap`/`cdk deploy`
+contra AWS (orquestación Step Functions/Lambda §5, hoy `emitInvoice` es una función en proceso que
+sigue la misma secuencia lógica), persistencia DynamoDB/S3, soporte de `.pfx`/PKCS#12, notas de
+crédito/débito, flujo asíncrono (`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
 
 ---
-*Próximo paso sugerido: infraestructura como código (CDK/Terraform) para Step Functions/Lambda,
-o persistencia real (DynamoDB/S3) — ver `docs/flows.md` para el orden de dependencia completo del
-roadmap.*
+*Próximo paso sugerido: dentro de `apps/infra` (ADR-0007, ya scaffoldeado), decidir y modelar el
+primer recurso real — candidato natural: DynamoDB para `TenantRegistry` — y resolver la policy IAM
+de `cdk bootstrap`/`cdk deploy` antes de la primera corrida contra AWS real. Ver `docs/flows.md`
+para el orden de dependencia completo del roadmap.*

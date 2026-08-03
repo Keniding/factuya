@@ -42,5 +42,6 @@ bun run apps/api/src/index.ts # levanta la API en :3000 — documentación inter
 ```
 
 Pendiente (orden de dependencia completo en `docs/flows.md`): soporte de `.pfx`/PKCS#12,
-infraestructura como código (Step Functions/Lambda/DynamoDB/S3), flujo asíncrono SUNAT y notas de
-crédito/débito, webhooks, y el adaptador `co-factus` (Colombia, fase 2).
+infraestructura como código (arrancada con AWS CDK — ADR-0007, `apps/infra` — pero solo un
+scaffold sintetizado localmente, sin recursos reales ni despliegue todavía), flujo asíncrono SUNAT
+y notas de crédito/débito, webhooks, y el adaptador `co-factus` (Colombia, fase 2).

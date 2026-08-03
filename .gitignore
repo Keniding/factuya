@@ -1,6 +1,10 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Salida sintetizada de AWS CDK (apps/infra) — se regenera con `cdk synth`, nunca a mano.
+cdk.out/
+apps/infra/cdk.context.json
 .env
 .env.*
 *.pfx

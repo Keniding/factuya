@@ -1,0 +1,19 @@
+{
+  "name": "@factuya/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "bootstrap": "cdk bootstrap"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.263.0",
+    "constructs": "10.8.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1134.0"
+  }
+}

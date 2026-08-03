@@ -5,6 +5,7 @@
     { "path": "packages/core-domain" },
     { "path": "packages/signing" },
     { "path": "packages/adapters/pe-sunat" },
-    { "path": "apps/api" }
+    { "path": "apps/api" },
+    { "path": "apps/infra" }
   ]
 }

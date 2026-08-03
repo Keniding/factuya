@@ -37,9 +37,11 @@ está construido, probado, y validado contra el servicio real de SUNAT (no simul
 
 Lo que el SDD describe y **todavía no existe**:
 
-- Ninguna infraestructura de AWS real más allá de KMS: no hay Lambda, Step Functions, CloudHSM,
-  DynamoDB, S3, SQS, ni EventBridge desplegados o siquiera como código IaC (CDK/Terraform).
-  `apps/api` es un servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
+- Ninguna infraestructura de AWS real más allá de KMS desplegada — no hay Lambda, Step Functions,
+  CloudHSM, DynamoDB, S3, SQS, ni EventBridge en la cuenta real. `apps/infra` (ADR-0007, AWS CDK en
+  TypeScript) ya existe como scaffold sintetizable localmente, pero `cdk bootstrap`/`cdk deploy`
+  nunca se han corrido contra AWS. `apps/api` sigue siendo un servidor Bun de un solo proceso, no
+  la arquitectura serverless del SDD §5.
 - `POST /v1/tenants/{id}/certificate` no soporta `.pfx`/PKCS#12 todavía — solo certificado y clave
   privada en PEM por separado (ver ADR-0006). `LocalTenantRegistry` sigue en memoria del proceso,
   no DynamoDB.
@@ -139,12 +141,15 @@ qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
    la corrida en vivo del import de clave contra AWS real (2026-08-03, ver
    `packages/signing/README.md`). Pendiente dentro de este punto: soporte de `.pfx`/PKCS#12 (hoy
    solo PEM separado) y respaldar `TenantRegistry` en DynamoDB en vez de memoria del proceso.
-2. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
-   DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
-   `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por
-   puertos — pero el *empaquetado* y la *orquestación* si son trabajo nuevo completo. El usuario
-   IAM `factuya-dev` (permisos mínimos, ver `docs/aws/`) ya está creado y puede irse ampliando con
-   una policy acotada por cada pieza nueva, en vez de una policy amplia de una sola vez.
+2. **Infraestructura como código — arrancado (ADR-0007: AWS CDK, TypeScript)**: `apps/infra`
+   (`@factuya/infra`) ya existe con un scaffold mínimo (`FactuyaInfraStack`, vacío), `cdk synth`
+   verificado localmente. Pendiente: decidir qué recurso modelar primero (candidato natural: la
+   tabla de DynamoDB para `TenantRegistry`, que además resuelve el punto 3 de abajo), y una policy
+   IAM nueva y acotada para el bootstrap/deploy real contra AWS (el usuario `factuya-dev`, permisos
+   mínimos, solo tiene KMS hoy — ver `docs/aws/aws-infrastructure-sdd.md`). Lambda + Step
+   Functions + SQS DLQ + DynamoDB + S3 se agregan pieza por pieza, no de una sola vez — el código
+   de dominio no debería necesitar cambios grandes (ya está separado por puertos), pero el
+   *empaquetado* y la *orquestación* sí son trabajo nuevo completo.
 3. **Persistencia real**: DynamoDB para estado/correlativos por tenant (con locking optimista
    para evitar duplicados bajo concurrencia — hoy el contador es un entero en memoria, solo
    válido para un proceso) y el propio `TenantRegistry`, S3 para XML/CDR/PDF.
