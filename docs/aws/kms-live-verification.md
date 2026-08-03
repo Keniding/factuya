@@ -82,19 +82,21 @@ policy propia**, nueva, no buscar una existente:
 ```
 
 4. "Siguiente" → en la pantalla de revisión ("Revisar y crear"), completar:
-   - **Nombre de la política**: `FactuyaDevKmsSignerPolicy`. Si la consola rechaza el nombre con
-     "Los caracteres no son válidos" aunque se vea correcto, es casi siempre un carácter
-     invisible pegado del copiar/pegar (espacio al final, comilla inteligente, etc.) — borrar el
-     campo entero y escribir el nombre a mano en vez de pegarlo.
+   - **Nombre de la política**: `FactuyaDevKmsSignerPolicy`.
    - **Descripción** (opcional, pero déjala — explica el propósito sin depender de que alguien
      recuerde esta conversación):
      ```
-     Permisos mínimos para que Factuya (packages/signing/KmsSigner) firme documentos vía AWS KMS,
-     usando una CMK asimétrica compartida por ambiente con aislamiento por tenant vía Grants en vez
-     de una CMK por tenant (ver ADR-0003 del repo). Incluye: crear/describir la CMK, crear y revocar
-     Grants Sign-only por tenant, firmar, obtener la llave pública, y programar el borrado de la CMK.
-     Uso: verificación en vivo de KmsSigner en ambiente dev (docs/aws/kms-live-verification.md).
+     Minimum KMS permissions for Factuya to sign documents using a shared key per environment with
+     per tenant access via grants, instead of one key per tenant, to keep KMS cost fixed as tenants
+     grow. Used for live verification of the KmsSigner signing integration in the dev environment.
      ```
+   - **Hallazgo real sobre estos dos campos**: tanto "Nombre de la política" como "Descripción"
+     en la consola de IAM solo aceptan **caracteres alfanuméricos y `+=,.@-_`** — nada de
+     paréntesis, barras (`/`), dos puntos (`:`), comillas, ni ningún otro símbolo. Un primer
+     intento de descripción con `(packages/signing/KmsSigner)` y `(ver ADR-0003)` fue rechazado
+     por los paréntesis y la barra, no por un error de copiado — por eso el texto de arriba evita
+     esos caracteres a propósito. Si la consola sigue rechazando algo que parece válido, revisar
+     primero por este motivo antes de asumir que es un carácter invisible del copiar/pegar.
    - Antes de crear, confirmar que "Permisos definidos en esta política" muestra **KMS — Limitado:
      Enumerar, Administración de permisos, Leer, Escribir, Etiquetado — Todos los recursos** (así
      es como la consola resume las 12 acciones del JSON pegado en el paso 3 — si dice otro
