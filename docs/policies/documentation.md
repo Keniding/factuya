@@ -17,8 +17,9 @@ docs/
 │   └── LEDGER.md         # registro de toda dependencia externa investigada
 ├── adapters/             # un doc funcional por país, cuando exista el adaptador
 │   └── pe-sunat.md
-└── aws/                  # guías de verificación contra AWS real (ver docs/aws/README.md)
-    ├── README.md         # índice + convención pública/<tema>.private.md (gitignored)
+└── aws/                  # infraestructura AWS real (ver docs/aws/README.md)
+    ├── README.md                    # índice + convención pública/<tema>.private.md (gitignored)
+    ├── aws-infrastructure-sdd.md    # spec vivo del estado de infra AWS por servicio
     └── kms-live-verification.md
 ```
 

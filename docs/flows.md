@@ -114,7 +114,10 @@ solo el adaptador que resuelve el `tenantId`, no el contrato que ve el integrado
 
 ## El flujo que sigue (roadmap, en orden de dependencia)
 
-No es una lista de deseos sin orden — cada paso depende del anterior o desbloquea el siguiente:
+No es una lista de deseos sin orden — cada paso depende del anterior o desbloquea el siguiente.
+Para la parte de infraestructura AWS específicamente, `docs/aws/aws-infrastructure-sdd.md` es el
+documento vivo que trackea, servicio por servicio, qué ya está verificado en una cuenta real vs.
+qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
 
 1. **Multi-tenant real**: autenticación por API key/JWT en `apps/api`, resolución de
    `TenantConfig` por tenant (hoy es una constante), y el endpoint

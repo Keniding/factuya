@@ -192,6 +192,10 @@ Justificación de monorepo para el MVP: un solo país activo, equipo pequeño, y
 
 ## 11. Infraestructura como código y stack recomendado
 
+> Ver `docs/aws/aws-infrastructure-sdd.md` para el estado real y vivo de esta sección — qué de lo
+> descrito abajo ya existe verificado en una cuenta de AWS real (hoy: solo KMS) y qué sigue siendo
+> el diseño aspiracional.
+
 - **Lenguaje**: TypeScript — mejor madurez de librerías de firma XML y mejor cold-start en Lambda que JVM.
 - **Compilador/type-check**: `typescript@6.0.2` (paquete `@typescript/typescript6`) como fuente de verdad para build y CI — **no** `typescript@7.0.2` todavía, porque el ecosistema de tooling (`typescript-eslint`, `ts-jest`/equivalentes, `ts-morph`) aún no soporta la API programática de TS7 (estable recién en TS 7.1, ~oct. 2026). Ver ADR-0001. Se puede correr `tsgo` (TS7 nativo) en paralelo como chequeo rápido no bloqueante en CI, pero no como *source of truth*.
 - **Package manager / runtime de desarrollo**: **Bun** (`bun install`, `bun run`, `bun test`, `bun build`) para todo el monorepo TypeScript — equivalente a lo que `uv` es para Python. **Importante**: Bun **no** es un runtime gestionado oficialmente por AWS Lambda (no existe `provided.bun` como managed runtime). El flujo correcto es: desarrollar/testear/bundlear con Bun, pero **desplegar el artefacto compilado sobre el runtime oficial `nodejs` de Lambda** (Bun solo como custom runtime/layer quedaría descartado para el MVP por complejidad operativa extra en un sistema donde la disponibilidad es crítica). Revisar en cada release de Bun si esto cambia antes de asumir lo contrario.
