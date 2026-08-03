@@ -9,3 +9,7 @@ dist/
 .DS_Store
 
 .idea/
+
+# Notas con valores reales de una cuenta AWS específica — nunca al repo público, ver
+# docs/kms-live-verification.md (la versión sin valores de cuenta, esa sí se commitea).
+docs/kms-live-verification.private.md

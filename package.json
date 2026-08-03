@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "tsc6 --build --pretty",
     "test": "bun test",
-    "test:integration": "bun test --timeout 30000 packages/adapters/pe-sunat/test/integration"
+    "test:integration": "bun test --timeout 30000 packages/adapters/pe-sunat/test/integration packages/signing/test/integration"
   },
   "devDependencies": {
     "@types/bun": "latest",
