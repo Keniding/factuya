@@ -8,6 +8,7 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "3.1100.0",
     "@factuya/adapter-pe-sunat": "workspace:*",
     "@factuya/core-domain": "workspace:*",
     "@factuya/shared-types": "workspace:*",

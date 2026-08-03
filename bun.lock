@@ -13,6 +13,7 @@
       "name": "@factuya/api",
       "version": "0.1.0",
       "dependencies": {
+        "@aws-sdk/client-kms": "3.1100.0",
         "@factuya/adapter-pe-sunat": "workspace:*",
         "@factuya/core-domain": "workspace:*",
         "@factuya/shared-types": "workspace:*",

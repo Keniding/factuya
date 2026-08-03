@@ -1,6 +1,10 @@
 # ADR-0003: KMS — una CMK asimétrica compartida + un Grant por tenant, no una CMK por tenant
 
-- Estado: aceptado
+- Estado: **reemplazado por [ADR-0005](0005-kms-one-cmk-per-tenant.md)** (2026-08-03) — la decisión
+  central de este ADR (una CMK compartida entre todos los tenants) se basó en una lectura
+  incorrecta de la fuente citada abajo. Ver ADR-0005 para la corrección completa. Este documento
+  se conserva sin reescribir, según la política del repo, para que la historia de la decisión
+  quede trazable.
 - Fecha: 2026-07-31
 
 ## Contexto

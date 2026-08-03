@@ -77,13 +77,21 @@ policy propia**, nueva, no buscar una existente:
         "kms:ScheduleKeyDeletion",
         "kms:TagResource",
         "kms:CreateAlias",
-        "kms:DeleteAlias"
+        "kms:DeleteAlias",
+        "kms:GetParametersForImport",
+        "kms:ImportKeyMaterial"
       ],
       "Resource": "*"
     }
   ]
 }
 ```
+
+> **Si ya creaste esta policy antes** (ej. siguiendo una versión anterior de esta guía) y solo
+> tenía las primeras 12 acciones: `GetParametersForImport`/`ImportKeyMaterial` se agregaron
+> después, para el import de clave real de un tenant (ADR-0006). Edítala en
+> IAM → Policies → `FactuyaDevKmsSignerPolicy` → pestaña JSON → agregar esas dos líneas → guardar
+> — no hace falta recrear el usuario ni la policy desde cero.
 
 4. "Siguiente" → en la pantalla de revisión ("Revisar y crear"), completar:
    - **Nombre de la política**: `FactuyaDevKmsSignerPolicy`.
@@ -103,7 +111,7 @@ policy propia**, nueva, no buscar una existente:
      primero por este motivo antes de asumir que es un carácter invisible del copiar/pegar.
    - Antes de crear, confirmar que "Permisos definidos en esta política" muestra **KMS — Limitado:
      Enumerar, Administración de permisos, Leer, Escribir, Etiquetado — Todos los recursos** (así
-     es como la consola resume las 12 acciones del JSON pegado en el paso 3 — si dice otro
+     es como la consola resume las 14 acciones del JSON pegado en el paso 3 — si dice otro
      servicio o "Acceso completo", revisar que el JSON se haya pegado bien).
    - Clic en "Crear política". Queda guardada como policy "administrada por el cliente" de esta
      cuenta, no una de AWS.
@@ -190,6 +198,32 @@ dependencia nueva únicamente para esto.
 Sin los tres valores, el test se omite con un mensaje claro — mismo patrón honesto que
 `sunat-beta.integration.test.ts` (se omite explícitamente en vez de fallar confuso o fingir que
 pasó).
+
+## Paso 4b — Verificar el import de clave real de un tenant (ADR-0005/ADR-0006)
+
+Requiere haber agregado `kms:GetParametersForImport` y `kms:ImportKeyMaterial` a
+`FactuyaDevKmsSignerPolicy` (ver la nota en el Paso 1b si la policy ya existía de antes).
+
+`packages/signing/test/integration/kms-tenant-key-import-live.integration.test.ts` hace, contra
+el servicio real:
+
+1. Genera una clave RSA-2048 local (simula la clave privada real que un tenant ya tendría de su
+   propio registro ante SUNAT).
+2. Crea una CMK dedicada (`Origin: EXTERNAL`) e importa esa clave con el procedimiento real de
+   `RSA_AES_KEY_WRAP_SHA_256` (`GetParametersForImport` → envolver con AES-KWP + RSA-OAEP → 
+   `ImportKeyMaterial` — ver ADR-0006).
+3. Firma con `KmsSigner` usando esa CMK, y verifica la firma contra la llave pública **original**
+   del tenant (no una obtenida de KMS) — confirma que KMS importó y usa exactamente la clave
+   privada que se le envió, no una generada por error.
+4. Limpia: programa el borrado de la CMK (`ScheduleKeyDeletion`).
+
+Solo necesita los dos primeros gates (no requiere el ARN del principal, este flujo no usa Grants):
+
+```bash
+FACTUYA_KMS_LIVE_TEST=1 \
+AWS_PROFILE=factuya-dev \
+bun test packages/signing/test/integration/kms-tenant-key-import-live.integration.test.ts
+```
 
 ## Paso 5 — Registrar el resultado
 

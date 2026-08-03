@@ -1,5 +1,5 @@
 import { createApp } from "./app";
-import { logDevTenantInfo, peSunatAdapter, tenantRegistry } from "./config";
+import { adminApiKeyHash, kmsClient, logDevTenantInfo, peSunatAdapter, tenantRegistry } from "./config";
 
 /**
  * Punto de entrada real de `apps/api` — arma las dependencias reales (certificado efímero,
@@ -15,7 +15,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 
 const server = Bun.serve({
   port: PORT,
-  fetch: createApp({ tenantRegistry, countryAdapter: peSunatAdapter }),
+  fetch: createApp({ tenantRegistry, countryAdapter: peSunatAdapter, kmsClient, adminApiKeyHash }),
 });
 
 console.log(`Factuya API escuchando en http://localhost:${server.port}`);

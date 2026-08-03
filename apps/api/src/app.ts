@@ -1,12 +1,16 @@
 import type { TenantConfig } from "@factuya/shared-types";
 import type { CountryAdapter } from "@factuya/core-domain";
 import { emitInvoice } from "@factuya/core-domain";
+import type { KMSClient } from "@aws-sdk/client-kms";
+import { createTenantSigningKey } from "@factuya/signing";
 import { randomUUID } from "node:crypto";
-import { authenticate, UnauthorizedError } from "./auth";
+import { authenticate, authenticateAdmin, UnauthorizedError } from "./auth";
+import { generateApiKey } from "./api-key";
 import type { TenantRegistry } from "./tenant-registry";
 import { getInvoice, saveInvoice } from "./invoice-store";
 import { PE_CATALOGS } from "./catalogs";
 import { BadRequestError, parseInvoiceRequest } from "./validate-invoice-request";
+import { parseTenantCertificateRequest } from "./validate-tenant-certificate-request";
 import { OPENAPI_YAML_PATH, SCALAR_STANDALONE_JS_PATH, renderDocsHtml } from "./scalar-docs";
 
 /**
@@ -28,6 +32,8 @@ import { OPENAPI_YAML_PATH, SCALAR_STANDALONE_JS_PATH, renderDocsHtml } from "./
 export interface AppDependencies {
   tenantRegistry: TenantRegistry;
   countryAdapter: CountryAdapter;
+  kmsClient: KMSClient;
+  adminApiKeyHash: string;
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -42,7 +48,7 @@ function unauthorizedResponse(err: UnauthorizedError): Response {
 }
 
 export function createApp(deps: AppDependencies): (req: Request) => Promise<Response> {
-  const { tenantRegistry, countryAdapter } = deps;
+  const { tenantRegistry, countryAdapter, kmsClient, adminApiKeyHash } = deps;
 
   async function handleCreateInvoice(req: Request, tenant: TenantConfig): Promise<Response> {
     let rawBody: unknown;
@@ -81,6 +87,50 @@ export function createApp(deps: AppDependencies): (req: Request) => Promise<Resp
     return json({ id: stored.id, createdAt: stored.createdAt, ...stored.result });
   }
 
+  /**
+   * ADR-0005/ADR-0006: crea una CMK dedicada para este tenant, importa su clave privada real, y
+   * lo registra con una API key nueva. Admin-only (ver `authenticateAdmin`) — la API key del
+   * tenant recién creado se devuelve **una sola vez**, no se puede volver a consultar.
+   */
+  async function handleCreateTenantCertificate(req: Request, tenantId: string): Promise<Response> {
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return json({ error: "El cuerpo de la solicitud debe ser JSON válido" }, { status: 400 });
+    }
+
+    let parsed;
+    try {
+      parsed = parseTenantCertificateRequest(rawBody);
+    } catch (err) {
+      if (err instanceof BadRequestError) {
+        return json({ error: err.message, details: err.details }, { status: 400 });
+      }
+      throw err;
+    }
+
+    let imported: { keyId: string };
+    try {
+      imported = await createTenantSigningKey(kmsClient, parsed.privateKeyPem, `Factuya tenant ${tenantId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return json({ error: `No se pudo importar la clave a KMS: ${message}` }, { status: 502 });
+    }
+
+    const apiKey = generateApiKey();
+    const tenant: TenantConfig = {
+      tenantId,
+      country: "PE",
+      submissionChannel: "SUNAT_DIRECT",
+      issuer: { taxId: parsed.ruc, legalName: parsed.legalName },
+      certificate: { publicCertificatePem: parsed.certificatePem, signerRef: imported.keyId },
+    };
+    await tenantRegistry.register(apiKey, tenant);
+
+    return json({ tenantId, apiKey, kmsKeyId: imported.keyId }, { status: 201 });
+  }
+
   function handleGetCatalog(country: string, catalog: string): Response {
     if (country !== "PE") {
       return json({ error: `País no soportado en este MVP: ${country}` }, { status: 404 });
@@ -116,6 +166,20 @@ export function createApp(deps: AppDependencies): (req: Request) => Promise<Resp
     const catalogMatch = pathname.match(/^\/v1\/catalogs\/([^/]+)\/([^/]+)$/);
     if (method === "GET" && catalogMatch) {
       return handleGetCatalog(catalogMatch[1]!, catalogMatch[2]!);
+    }
+
+    // Admin-only (ver ADR-0006) — se resuelve antes del bloque de auth de tenant de abajo, porque
+    // usa un mecanismo de autenticación distinto (una sola API key de administrador, no un
+    // TenantRegistry).
+    const tenantCertificateMatch = pathname.match(/^\/v1\/tenants\/([^/]+)\/certificate$/);
+    if (method === "POST" && tenantCertificateMatch) {
+      try {
+        authenticateAdmin(req, adminApiKeyHash);
+      } catch (err) {
+        if (err instanceof UnauthorizedError) return unauthorizedResponse(err);
+        throw err;
+      }
+      return handleCreateTenantCertificate(req, tenantCertificateMatch[1]!);
     }
 
     if (pathname.startsWith("/v1/")) {

@@ -8,3 +8,5 @@ export {
   type TenantGrant,
 } from "./kms-grants";
 export { signUblXml, type SignUblXmlOptions } from "./xml-dsig-signer";
+export { createTenantSigningKey, type ImportedTenantKey } from "./kms-tenant-key-import";
+export { aesKeyWrapWithPadding, aesKeyUnwrapWithPadding } from "./aes-kwp";

@@ -47,9 +47,9 @@ docs/aws/                      + guías de verificación paso a paso (pública +
 .claude/skills/deps-*/         skills de dependencias, generadas investigando el paquete real
 packages/shared-types/         InvoiceRequest/InvoiceResult/TenantConfig — modelo agnóstico
 packages/core-domain/          puerto CountryAdapter + orquestación emitInvoice
-packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner real (ADR-0003, verificado en vivo)
+packages/signing/              firma XMLDSig; LocalPemKeySigner (dev/test) + KmsSigner real (ADR-0005, CMK por tenant) + import de clave (ADR-0006)
 packages/adapters/pe-sunat/    build UBL, SOAP client, parseo de CDR — implementación real
-apps/api/                      servidor HTTP real (Bun.serve) + multi-tenant por API Key (ADR-0004) + docs (Scalar en /docs)
+apps/api/                      servidor HTTP real (Bun.serve) + multi-tenant por API Key (ADR-0004) + alta de tenant/certificado (ADR-0006) + docs (Scalar en /docs)
 apps/api/openapi.yaml          contrato real de la API — fuente de verdad, no el §7 aspiracional del SDD
 ```
 

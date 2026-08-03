@@ -13,10 +13,11 @@ info:
       (`sendBill`).
     - Multi-tenant real por API key (ver ADR-0004): todo `/v1/invoices*` exige
       `Authorization: Bearer <api_key>`, resuelta contra un `TenantRegistry` — hoy una
-      implementación en memoria (`LocalTenantRegistry`) sembrada con un tenant de desarrollo al
-      arrancar el servidor (certificado efímero) — no DynamoDB todavía, y todos los tenants
-      sembrados comparten el mismo certificado/`Signer` (el flujo de que cada tenant traiga su
-      propio certificado, `POST /v1/tenants/{id}/certificate`, no está implementado).
+      implementación en memoria (`LocalTenantRegistry`), no DynamoDB todavía.
+    - `POST /v1/tenants/{id}/certificate` (ver ADR-0005/ADR-0006) ya está implementado: cada
+      tenant trae su propio certificado + clave privada real (PEM, no `.pfx` todavía), y recibe
+      su propia CMK dedicada en KMS — no comparte identidad criptográfica con otros tenants. Es
+      admin-only (una API key de administrador separada, sin RBAC real todavía).
     - Solo Factura (`documentType: "INVOICE"`) — notas de crédito/débito no están implementadas.
     - Los catálogos expuestos son el subconjunto mínimo que el MVP soporta, no el catálogo
       oficial completo de SUNAT.
@@ -31,6 +32,8 @@ servers:
 tags:
   - name: invoices
     description: Emisión y consulta de comprobantes electrónicos
+  - name: tenants
+    description: Alta de tenants (admin-only) — certificado real + custodia de clave en KMS
   - name: catalogs
     description: Catálogos mínimos soportados por el MVP
   - name: health
@@ -238,8 +241,75 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/tenants/{id}/certificate:
+    post:
+      operationId: createTenantCertificate
+      tags: [tenants]
+      summary: Registrar el certificado real de un tenant (admin-only)
+      security:
+        - adminBearerAuth: []
+      description: >
+        Ver ADR-0005/ADR-0006. Crea una CMK de KMS dedicada para este tenant (no compartida con
+        ningún otro) e importa su clave privada real (`GetParametersForImport` +
+        `ImportKeyMaterial`, wrapping `RSA_AES_KEY_WRAP_SHA_256`). Solo acepta certificado y clave
+        privada en PEM por separado — no `.pfx` (PKCS#12) todavía. Requiere la API key de
+        administrador (`FACTUYA_ADMIN_API_KEY`), no una API key de tenant — es un mecanismo
+        temporal, no un sistema de roles real.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identificador elegido para el tenant nuevo, ej. "acme-corp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantCertificateRequest"
+      responses:
+        "201":
+          description: >
+            Tenant creado. La API key se devuelve una sola vez en este response — no se puede
+            volver a consultar, igual que cualquier sistema de API keys (Stripe, GitHub, etc.).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantCertificateResponse"
+        "400":
+          description: >
+            Cuerpo inválido — falta un campo, el certificado/clave no parsean, o el certificado y
+            la clave privada no corresponden al mismo par de llaves.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Falta el header Authorization, o no es la API key de administrador
+          headers:
+            WWW-Authenticate:
+              schema: { type: string, enum: [Bearer] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: KMS rechazó la creación de la CMK o el import de la clave
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        API key de administrador (`FACTUYA_ADMIN_API_KEY`) — distinta de la API key de un tenant.
+        Solo autoriza `POST /v1/tenants/{id}/certificate`. Mecanismo temporal (ver ADR-0006), no
+        un sistema de roles real.
     bearerAuth:
       type: http
       scheme: bearer
@@ -407,6 +477,41 @@ components:
       properties:
         code: { type: string }
         name: { type: string }
+
+    TenantCertificateRequest:
+      type: object
+      required: [ruc, legalName, certificatePem, privateKeyPem]
+      properties:
+        ruc:
+          type: string
+          description: RUC del tenant
+        legalName:
+          type: string
+          description: Razón social del tenant
+        certificatePem:
+          type: string
+          description: Certificado X.509 del tenant, en PEM (no .pfx todavía — ver ADR-0006)
+        privateKeyPem:
+          type: string
+          description: >
+            Clave privada RSA correspondiente al certificado, en PEM (PKCS#8 o PKCS#1). Se envuelve
+            localmente (AES-KWP + RSA-OAEP) antes de enviarse a KMS — nunca queda en texto plano
+            en ningún almacenamiento de Factuya.
+
+    TenantCertificateResponse:
+      type: object
+      required: [tenantId, apiKey, kmsKeyId]
+      properties:
+        tenantId:
+          type: string
+        apiKey:
+          type: string
+          description: >
+            La API key del tenant nuevo — se muestra una sola vez, guardarla ahora. No se puede
+            volver a consultar.
+        kmsKeyId:
+          type: string
+          description: KeyId de la CMK dedicada de este tenant en KMS
 
     ErrorResponse:
       type: object

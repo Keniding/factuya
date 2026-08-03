@@ -26,18 +26,23 @@ está construido, probado, y validado contra el servicio real de SUNAT (no simul
 - Multi-tenant real en `apps/api` (ADR-0004): autenticación `Authorization: Bearer <api_key>`,
   hash SHA-256 + comparación en tiempo constante, resolución de `TenantConfig` vía `TenantRegistry`
   inyectable, y aislamiento real entre tenants (un tenant nunca puede leer un comprobante de otro
-  — ver `apps/api/README.md`). La implementación del registro (`LocalTenantRegistry`) sigue siendo
-  en memoria del proceso, no DynamoDB — y todos los tenants sembrados comparten el mismo
-  certificado/`Signer`, no custodia de clave por tenant todavía.
+  — ver `apps/api/README.md`).
+- `POST /v1/tenants/{id}/certificate` (ADR-0005/ADR-0006): cada tenant se da de alta con su
+  **propio certificado real** y su **propia CMK dedicada** en KMS — no comparte identidad
+  criptográfica con otros tenants (corrige el diseño original de ADR-0003, que sí la compartía).
+  El import de la clave privada real usa AES Key Wrap con Padding (RFC 5649), implementado a mano
+  y validado contra los vectores de prueba oficiales del RFC — ver `packages/signing/README.md`.
+  Probado de punta a punta con un `KMSClient` falso (validación criptográfica completa del
+  wrapping); pendiente la corrida en vivo contra AWS real.
 
 Lo que el SDD describe y **todavía no existe**:
 
 - Ninguna infraestructura de AWS real más allá de KMS: no hay Lambda, Step Functions, CloudHSM,
   DynamoDB, S3, SQS, ni EventBridge desplegados o siquiera como código IaC (CDK/Terraform).
   `apps/api` es un servidor Bun de un solo proceso, no la arquitectura serverless del SDD §5.
-- `POST /v1/tenants/{id}/certificate` (SDD §7) — el flujo para que un tenant real suba/registre su
-  propio certificado y quede con su propia custodia de clave (vía `KmsSigner`, ya verificado en
-  vivo) en vez de compartir el certificado efímero de desarrollo.
+- `POST /v1/tenants/{id}/certificate` no soporta `.pfx`/PKCS#12 todavía — solo certificado y clave
+  privada en PEM por separado (ver ADR-0006). `LocalTenantRegistry` sigue en memoria del proceso,
+  no DynamoDB.
 - Notas de crédito/débito, guías de remisión, resúmenes diarios/comunicación de baja (flujo
   asíncrono `sendSummary`/`getStatus`), y SIRE.
 - El adaptador Colombia (`co-factus`) — solo existe como referencia en el SDD, ningún código.
@@ -128,12 +133,12 @@ Para la parte de infraestructura AWS específicamente, `docs/aws/aws-infrastruct
 documento vivo que trackea, servicio por servicio, qué ya está verificado en una cuenta real vs.
 qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
 
-1. **Multi-tenant real — autenticación y resolución ya hechas (ADR-0004), falta el alta de
-   certificado por tenant**: `apps/api` ya autentica por API key y resuelve `TenantConfig` real vía
-   `TenantRegistry` (antes era una constante fija). Lo que falta es
-   `POST /v1/tenants/{id}/certificate` (SDD §7) — el flujo para que cada tenant registre su propio
-   certificado y quede con su propia custodia de clave (`KmsSigner`, ya verificado en vivo) en vez
-   de que todos los tenants sembrados compartan el certificado efímero de desarrollo.
+1. **Multi-tenant real — hecho (ADR-0004, ADR-0005, ADR-0006)**: `apps/api` autentica por API key,
+   resuelve `TenantConfig` real vía `TenantRegistry`, y cada tenant puede registrar su propio
+   certificado con su propia CMK dedicada en KMS (`POST /v1/tenants/{id}/certificate`). Pendiente
+   dentro de este punto: la corrida en vivo del import de clave contra AWS real (el código está
+   probado con validación criptográfica completa contra un `KMSClient` falso, ver
+   `packages/signing/README.md`), y soporte de `.pfx`/PKCS#12 (hoy solo PEM separado).
 2. **Infraestructura como código** (CDK o Terraform, ver SDD §11): Lambda + Step Functions + SQS
    DLQ + DynamoDB + S3, replicando el mismo pipeline que hoy corre como proceso único en
    `apps/api`. El código de dominio no debería necesitar cambios grandes — ya está separado por
@@ -142,7 +147,7 @@ qué sigue siendo diseño — se actualiza en cada pieza nueva que se construye.
    una policy acotada por cada pieza nueva, en vez de una policy amplia de una sola vez.
 3. **Persistencia real**: DynamoDB para estado/correlativos por tenant (con locking optimista
    para evitar duplicados bajo concurrencia — hoy el contador es un entero en memoria, solo
-   válido para un proceso), S3 para XML/CDR/PDF.
+   válido para un proceso) y el propio `TenantRegistry`, S3 para XML/CDR/PDF.
 4. **Flujo asíncrono SUNAT** (`sendSummary`/`getStatus`, resúmenes y bajas) y notas de
    crédito/débito — extienden `PeSunatAdapter`, que ya tiene el puerto (`checkStatus`) preparado
    pero sin implementación real todavía.

@@ -8,6 +8,13 @@ import { hashApiKey, hashesEqual } from "./api-key";
  */
 export interface TenantRegistry {
   resolveByApiKeyHash(apiKeyHash: string): Promise<TenantConfig | undefined>;
+  /**
+   * Da de alta un tenant con su API key en texto plano — la implementación debe guardar solo el
+   * hash (ver ADR-0006, `POST /v1/tenants/{id}/certificate`). Parte del contrato, no un detalle
+   * de `LocalTenantRegistry`: cualquier implementación real (ej. DynamoDB) también necesita
+   * soportar el alta de un tenant nuevo, no solo la resolución.
+   */
+  register(apiKey: string, tenant: TenantConfig): Promise<void>;
 }
 
 interface RegisteredTenant {
@@ -22,8 +29,7 @@ interface RegisteredTenant {
 export class LocalTenantRegistry implements TenantRegistry {
   private readonly tenants: RegisteredTenant[] = [];
 
-  /** Registra un tenant con su API key en texto plano — solo se guarda el hash. */
-  register(apiKey: string, tenant: TenantConfig): void {
+  async register(apiKey: string, tenant: TenantConfig): Promise<void> {
     this.tenants.push({ apiKeyHash: hashApiKey(apiKey), tenant });
   }
 

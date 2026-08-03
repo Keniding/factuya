@@ -46,6 +46,9 @@ Variables de entorno:
 | `SUNAT_SOL_PASSWORD` | `moddatos` |
 | `SUNAT_ISSUER_NAME` | `EMPRESA DEMO SAC` |
 | `FACTUYA_DEV_API_KEY` | Generada aleatoriamente en cada arranque si no se define |
+| `FACTUYA_ADMIN_API_KEY` | Generada aleatoriamente en cada arranque si no se define (ver "Alta de tenants" abajo) |
+| `AWS_REGION` | `us-east-2` |
+| `AWS_PROFILE` | Ninguno (usa la cadena de credenciales estándar de AWS — en producción, el rol de ejecución de Lambda) |
 
 ## Autenticación (ADR-0004)
 
@@ -69,14 +72,55 @@ curl -X POST http://localhost:3000/v1/invoices \
 O desde `GET /docs` (Scalar) — el botón de autenticación de la UI acepta pegar la key directamente
 y prueba los endpoints protegidos desde el navegador sin configuración adicional.
 
+## Alta de tenants reales (ADR-0005/ADR-0006)
+
+`POST /v1/tenants/{id}/certificate` da de alta un tenant con su **propio certificado real** — no
+comparte identidad criptográfica con ningún otro tenant (a diferencia del tenant de desarrollo
+sembrado al arrancar, que usa el certificado efímero compartido). Es **admin-only**: requiere
+`Authorization: Bearer <FACTUYA_ADMIN_API_KEY>` (impresa en consola al arrancar, igual que la key
+de desarrollo), no una API key de tenant normal — mecanismo temporal, no un sistema de roles real.
+
+```bash
+curl -X POST http://localhost:3000/v1/tenants/acme-corp/certificate \
+  -H "Authorization: Bearer <la admin key impresa al arrancar>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ruc": "20123456789",
+    "legalName": "ACME SAC",
+    "certificatePem": "-----BEGIN CERTIFICATE-----...",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----..."
+  }'
+```
+
+El flujo real detrás de este endpoint (`packages/signing/src/kms-tenant-key-import.ts`):
+
+1. Crea una CMK asimétrica dedicada en KMS (`Origin: EXTERNAL`) — solo de este tenant.
+2. Importa la clave privada real del tenant (`GetParametersForImport` + `ImportKeyMaterial`,
+   wrapping `RSA_AES_KEY_WRAP_SHA_256` — AES Key Wrap con Padding, RFC 5649, implementado a mano
+   porque no hay una dependencia npm mantenida que lo haga — ver ADR-0006 para el porqué).
+3. Genera una API key nueva para el tenant y lo registra en `TenantRegistry`.
+4. Devuelve `{ tenantId, apiKey, kmsKeyId }` — **la API key solo se muestra en esta respuesta**,
+   no se puede volver a consultar (igual que Stripe/GitHub/cualquier sistema de API keys).
+
+Solo acepta certificado + clave privada por separado en PEM — **no `.pfx`/PKCS#12 todavía**
+(parsear ese formato requeriría una dependencia nueva, fuera de alcance de este incremento, ver
+ADR-0006). Si tu certificado viene en `.pfx`, sepáralo primero:
+
+```bash
+openssl pkcs12 -in certificado.pfx -clcerts -nokeys -out certificado.pem
+openssl pkcs12 -in certificado.pfx -nocerts -nodes -out clave-privada.pem
+```
+
 ## Rutas implementadas
 
-- `POST /v1/invoices` *(requiere auth)* — emite una Factura. Responde **201 síncrono** con el
-  resultado final (no 202 + webhook, porque el adaptador SUNAT de este MVP solo implementa el
-  flujo síncrono `sendBill` — ver `docs/adapters/pe-sunat.md`).
-- `GET /v1/invoices/{id}` *(requiere auth)* — consulta un comprobante ya emitido por el mismo
-  tenant (store en memoria del proceso, se pierde al reiniciar — producción necesita DynamoDB, no
-  implementado aquí).
+- `POST /v1/invoices` *(requiere auth de tenant)* — emite una Factura. Responde **201 síncrono**
+  con el resultado final (no 202 + webhook, porque el adaptador SUNAT de este MVP solo implementa
+  el flujo síncrono `sendBill` — ver `docs/adapters/pe-sunat.md`).
+- `GET /v1/invoices/{id}` *(requiere auth de tenant)* — consulta un comprobante ya emitido por el
+  mismo tenant (store en memoria del proceso, se pierde al reiniciar — producción necesita
+  DynamoDB, no implementado aquí).
+- `POST /v1/tenants/{id}/certificate` *(requiere auth de admin)* — da de alta un tenant con su
+  propio certificado y su propia CMK dedicada en KMS (ver "Alta de tenants reales" arriba).
 - `GET /v1/catalogs/{country}/{catalog}` *(pública)* — solo `PE`, y solo los catálogos mínimos que
   el MVP soporta (`document-types`, `identity-document-types`, `tax-affectation`) — no el catálogo
   oficial completo de SUNAT.
@@ -84,7 +128,7 @@ y prueba los endpoints protegidos desde el navegador sin configuración adiciona
 - `GET /docs` *(pública)* — documentación interactiva (Scalar API Reference) generada desde
   `openapi.yaml`.
 - `GET /openapi.yaml` *(pública)* — el spec OpenAPI 3.1 crudo, fiel a lo realmente implementado
-  (no aspiracional), con el `securityScheme` `bearerAuth` documentado.
+  (no aspiracional), con los `securitySchemes` `bearerAuth`/`adminBearerAuth` documentados.
 
 ## Documentación interactiva (Scalar)
 
@@ -96,13 +140,16 @@ lo apunta a `/openapi.yaml`, servido por este mismo proceso. Con el servidor cor
 
 ## Qué NO hace todavía (ver docs/flows.md para el detalle completo)
 
-- La autenticación multi-tenant ya es real (ADR-0004), pero `LocalTenantRegistry` es en memoria
-  del proceso — se pierde al reiniciar, y no hay endpoint para dar de alta un tenant en caliente
-  (`POST /v1/tenants/{id}/certificate` del SDD §7 sigue sin implementar). Producción necesita
-  DynamoDB (ver `docs/aws/aws-infrastructure-sdd.md`).
-- Todos los tenants sembrados comparten el mismo certificado/`Signer` (el certificado efímero de
-  `dev-certificate.ts`) — cada tenant tiene su propia identidad en el UBL (`issuer`), pero no
-  todavía su propia custodia de clave privada. `KmsSigner` ya existe y está verificado en vivo
-  contra AWS KMS (`packages/signing/README.md`), falta conectarlo aquí por tenant.
+- La autenticación multi-tenant (ADR-0004) y el alta de tenants con custodia de clave real
+  (ADR-0005/ADR-0006) ya son reales, pero `LocalTenantRegistry` es en memoria del proceso — se
+  pierde al reiniciar. Producción necesita DynamoDB (ver `docs/aws/aws-infrastructure-sdd.md`).
+- `POST /v1/tenants/{id}/certificate` no soporta `.pfx`/PKCS#12 — solo certificado y clave privada
+  en PEM por separado (ver ADR-0006).
+- La import de clave real (`createTenantSigningKey`) está probada de punta a punta contra un
+  `KMSClient` falso (con validación criptográfica completa del wrapping, no solo mocks de
+  llamadas), pero **pendiente de una corrida en vivo contra AWS real** al momento de escribir esto
+  — ver `docs/aws/kms-live-verification.md`, Paso 4b.
+- La API key de administrador es un mecanismo temporal — no reemplaza un sistema de roles/permisos
+  real, que debe diseñarse antes de producción.
 - No hay notas de crédito/débito, guías de remisión, ni flujo asíncrono (`sendSummary`).
 - No hay persistencia real (DynamoDB/S3) — el store de comprobantes es un `Map` en memoria.

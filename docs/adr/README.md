@@ -38,5 +38,7 @@ Usar `NNNN-titulo-corto-en-kebab-case.md`, numeración correlativa. Plantilla:
 |---|---|---|
 | [0001](0001-typescript-version-pin.md) | Pin de TypeScript 6.0.2 sobre 7.0.2 para build/CI | Aceptado |
 | [0002](0002-sunat-signature-standard-xmldsig-vs-xades.md) | SUNAT usa XMLDSig, no XAdES; Colombia sí requiere XAdES-EPES | Aceptado |
-| [0003](0003-kms-shared-cmk-with-grants.md) | KMS: una CMK compartida + Grants por tenant, no una CMK por tenant | Aceptado |
+| [0003](0003-kms-shared-cmk-with-grants.md) | KMS: una CMK compartida + Grants por tenant, no una CMK por tenant | Reemplazado por ADR-0005 |
 | [0004](0004-multi-tenant-api-key-auth.md) | Multi-tenant real en apps/api: API Key (no JWT) resuelta vía TenantRegistry | Aceptado |
+| [0005](0005-kms-one-cmk-per-tenant.md) | KMS: una CMK por tenant (corrige ADR-0003 — lectura incorrecta de la fuente citada) | Aceptado |
+| [0006](0006-tenant-certificate-import.md) | POST /v1/tenants/{id}/certificate: import de la clave real del tenant (RFC 5649 AES-KWP + RSA-OAEP) | Aceptado |

@@ -6,8 +6,10 @@ qué servicio de AWS existe hoy de verdad en la cuenta, cuál está solo diseña
 sin construir, y en qué orden se van a ir levantando. Es un **documento vivo** — se actualiza cada
 vez que se construye o verifica una pieza nueva, en vez de dejar cada avance como una nota suelta.
 
-Versión 0.2 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
-día con multi-tenant real en `apps/api` (ADR-0004).
+Versión 0.3 · Empezado 2026-08-02 tras la primera verificación en vivo (KMS); actualizado el mismo
+día con multi-tenant real en `apps/api` (ADR-0004). 2026-08-03: corregido el diseño de KMS (ADR-0005
+reemplaza ADR-0003 — una CMK por tenant, no compartida) y agregado el import de clave real por
+tenant (ADR-0006).
 
 ## Relación con el resto de `docs/`
 
@@ -24,7 +26,7 @@ día con multi-tenant real en `apps/api` (ADR-0004).
   lleva IDs de cuenta, ARNs, ni nombres de recursos reales — esos van en la copia privada
   correspondiente.
 
-## Principios (heredados de `docs/sdd/factuya-sdd.md` §16 y ADR-0003)
+## Principios (heredados de `docs/sdd/factuya-sdd.md` §16 y ADR-0005)
 
 1. **Nada se marca "verificado" sin una corrida real** contra la cuenta de AWS — igual que SUNAT
    beta y KMS. Diseñado-pero-no-probado y verificado-en-vivo son estados distintos, y esta tabla
@@ -45,7 +47,7 @@ día con multi-tenant real en `apps/api` (ADR-0004).
 | Servicio AWS | Rol en la arquitectura (SDD §5) | Estado | Evidencia |
 |---|---|---|---|
 | IAM | Usuario de desarrollo con permisos mínimos por pieza | **Verificado en vivo** | Usuario `factuya-dev` creado, sin acceso a consola, policies acotadas por servicio (ver `docs/aws/kms-live-verification.md` Paso 1) |
-| KMS | Firma de comprobantes (`KmsSigner`), custodia de clave privada por tenant vía Grants | **Verificado en vivo** (2026-08-02) | CMK real creada, Grant `Sign`-only real, firma verificada con `crypto.verify()`, limpieza confirmada — ver `docs/aws/kms-live-verification.md`, ADR-0003 (addendum) |
+| KMS | Firma de comprobantes (`KmsSigner`); una CMK dedicada por tenant, con import de su clave privada real (ADR-0005/ADR-0006) | **Parcialmente verificado en vivo** — el mecanismo de firma (`Sign`) sí corrió contra AWS real (2026-08-02); el import de clave real de un tenant (`GetParametersForImport`/`ImportKeyMaterial`) está probado contra un `KMSClient` falso con validación criptográfica completa, pendiente la corrida en vivo | `docs/aws/kms-live-verification.md` Paso 4 (firma, PASS) y Paso 4b (import, pendiente) |
 | Lambda | `IngestHandler`, `BuildDocument`, `SignDocument`, `SubmitToSunat`, `PollStatus`, `StoreResult`, `NotifyTenant` | No iniciado | — |
 | Step Functions | Orquestación del flujo de emisión (`InvoiceEmissionWorkflow`, Standard) | No iniciado | — |
 | API Gateway (HTTP API) | Reemplazo de `apps/api` (`Bun.serve`) por el ingreso real de producción, con auth por tenant | No iniciado — `apps/api` hoy es un proceso Bun de desarrollo, no Lambda detrás de API Gateway | — |
@@ -67,13 +69,17 @@ nueva cada vez que se verifica una pieza más de la tabla de arriba.
 
 ## Próxima pieza a construir
 
-**Multi-tenant real en `apps/api` ya está hecho** (ADR-0004, 2026-08-02): autenticación por API
-Key, resolución de `TenantConfig` vía `TenantRegistry`, aislamiento real entre tenants — ver
-`apps/api/README.md`. Sigue siendo en memoria del proceso (`LocalTenantRegistry`), no respaldado
-en DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba, todavía "No iniciado".
+**Multi-tenant real en `apps/api` ya está hecho** (ADR-0004/0005/0006): autenticación por API Key,
+resolución de `TenantConfig` vía `TenantRegistry`, aislamiento real entre tenants, y cada tenant
+con su propia CMK dedicada + import de su clave privada real — ver `apps/api/README.md`. Pendiente
+inmediato: correr `kms-tenant-key-import-live.integration.test.ts` contra AWS real (requiere
+agregar `kms:GetParametersForImport`/`kms:ImportKeyMaterial` a `FactuyaDevKmsSignerPolicy` — ver
+`docs/aws/kms-live-verification.md` Paso 1b/4b). `LocalTenantRegistry` sigue en memoria del
+proceso, no respaldado en DynamoDB — eso depende de la fila de DynamoDB de la tabla de arriba,
+todavía "No iniciado".
 
-Según el orden de dependencia de `docs/flows.md`, lo que sigue es **infraestructura como código**
-(CDK o Terraform, a decidir con su propio ADR si la elección no es obvia) para empezar a mover
-`apps/api` de proceso Bun a Lambda + API Gateway real — el usuario IAM `factuya-dev` (permisos
-mínimos) ya existe y se amplía con una policy acotada por cada servicio nuevo, sin ampliar
-`FactuyaDevKmsSignerPolicy`.
+Después de eso, según el orden de dependencia de `docs/flows.md`, sigue **infraestructura como
+código** (CDK o Terraform, a decidir con su propio ADR si la elección no es obvia) para empezar a
+mover `apps/api` de proceso Bun a Lambda + API Gateway real — el usuario IAM `factuya-dev`
+(permisos mínimos) ya existe y se amplía con una policy acotada por cada servicio nuevo, sin
+ampliar `FactuyaDevKmsSignerPolicy`.

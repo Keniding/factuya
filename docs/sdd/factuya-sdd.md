@@ -1,6 +1,6 @@
 # Factuya — Spec-Driven Development (SDD)
 **Sistema intermediario agnóstico de facturación electrónica**
-Versión 0.6 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
+Versión 0.7 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/DIAN) y otros países
 
 > Historial: v0.1 fue la primera versión del spec. v0.2 incorpora políticas de desarrollo (§15),
 > gestión de dependencias sin alucinación (§16), y dos correcciones técnicas verificadas contra
@@ -13,8 +13,12 @@ Versión 0.6 · MVP: Perú (SUNAT) · Arquitectura lista para Colombia (Factus/D
 > real contra AWS KMS (2026-08-02, no solo contra tipos/documentación) — ver
 > `docs/aws/kms-live-verification.md` — y deja de ser la única pieza del MVP sin validar en vivo.
 > v0.6 implementa multi-tenant real en `apps/api` (§7, ADR-0004): API Key (no JWT) resuelta vía
-> `TenantRegistry`, con aislamiento real entre tenants — decisión y razones en ADR-0004 — ver
-> `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
+> `TenantRegistry`, con aislamiento real entre tenants. v0.7 corrige el diseño de KMS (ADR-0005
+> reemplaza ADR-0003: una CMK **por tenant**, no compartida — la versión anterior implicaba que
+> todos los tenants firmarían con la misma identidad criptográfica, contradiciendo el §13) e
+> implementa `POST /v1/tenants/{id}/certificate` (ADR-0006: import real de la clave privada del
+> tenant, AES-KWP/RFC 5649 implementado a mano y validado contra los vectores oficiales del RFC) —
+> ver `docs/flows.md` para el detalle completo y el estado honesto de qué falta.
 
 ---
 
@@ -130,10 +134,13 @@ y validado contra SUNAT beta**, es un subconjunto — ver `apps/api/openapi.yaml
 del contrato real, servido interactivamente en `GET /docs` vía Scalar) y `docs/flows.md` para el
 detalle exacto de qué difiere y por qué. Diferencias principales hoy: `POST /v1/invoices` responde
 **201 síncrono** (no 202 + webhook, el adaptador SUNAT del MVP solo implementa `sendBill`
-síncrono), no existe todavía `POST /v1/invoices/{id}/void` ni `POST /v1/tenants/{id}/certificate`
-ni el webhook, y `GET /v1/catalogs` expone solo el subconjunto mínimo que el MVP soporta. **La
-autenticación "API Key / JWT por tenant" ya está decidida y real**: API Key, no JWT (ADR-0004) —
-`Authorization: Bearer <api_key>` en todo endpoint bajo `/v1/invoices*`.
+síncrono), no existe todavía `POST /v1/invoices/{id}/void` ni el webhook, y `GET /v1/catalogs`
+expone solo el subconjunto mínimo que el MVP soporta. **La autenticación "API Key / JWT por
+tenant" ya está decidida y real**: API Key, no JWT (ADR-0004) — `Authorization: Bearer <api_key>`
+en todo endpoint bajo `/v1/invoices*`. **`POST /v1/tenants/{id}/certificate` ya está
+implementado** (ADR-0005/ADR-0006): cada tenant se da de alta con su propio certificado real y su
+propia CMK dedicada en KMS — admin-only (una API key de administrador separada, sin RBAC real
+todavía), y solo acepta certificado/clave en PEM por separado, no `.pfx`/PKCS#12.
 
 ```
 POST   /v1/invoices                → emite un comprobante (asíncrono; responde 202 + invoiceId)
@@ -161,10 +168,20 @@ Todo en JSON. El cliente jamás ve XML, SOAP, ni WSDL — eso vive exclusivament
 
 ## 9. Seguridad y gestión de certificados (crítico, multi-tenant)
 
-- Cada tenant sube su `.pfx`; se cifra en tránsito y en reposo; la clave privada se importa a **AWS KMS (clave asimétrica) o CloudHSM**, nunca queda en S3 ni en variables de entorno de Lambda en texto plano.
-- La operación `Sign()` es una llamada a KMS (`Sign` API, algoritmo `RSASSA_PKCS1_V1_5_SHA_256`, `MessageType: RAW` sobre el `ds:SignedInfo` ya canonicalizado) — la Lambda nunca tiene la clave privada en memoria. Implementado en `packages/signing/src/kms-signer.ts` y **verificado en vivo contra AWS KMS real** (2026-08-02): CMK real creada, Grant `Sign`-only real, firma verificada con `crypto.verify()` contra la llave pública real de KMS — ver `packages/signing/README.md` y `docs/aws/kms-live-verification.md`.
+- Cada tenant sube su certificado + clave privada real vía `POST /v1/tenants/{id}/certificate`
+  (implementado — ver ADR-0006; hoy PEM por separado, `.pfx`/PKCS#12 queda pendiente). La clave se
+  envuelve localmente (AES Key Wrap con Padding RFC 5649 + RSA-OAEP-SHA-256) e importa a **su
+  propia CMK asimétrica dedicada en AWS KMS** — nunca queda en texto plano en S3, DynamoDB, ni
+  variables de entorno de Lambda.
+- La operación `Sign()` es una llamada a KMS (`Sign` API, algoritmo `RSASSA_PKCS1_V1_5_SHA_256`, `MessageType: RAW` sobre el `ds:SignedInfo` ya canonicalizado) — la Lambda nunca tiene la clave privada en memoria. Implementado en `packages/signing/src/kms-signer.ts` y **verificado en vivo contra AWS KMS real** (2026-08-02): CMK real creada, firma verificada con `crypto.verify()` contra la llave pública real de KMS — ver `packages/signing/README.md` y `docs/aws/kms-live-verification.md`.
 - Librería de firma XMLDSig para el adaptador `pe-sunat`: ver skill `.claude/skills/deps-xml-crypto.md` (investigada y documentada siguiendo el proceso de §16). Para el adaptador `co-factus` (fase 2) se requiere una librería XAdES-EPES distinta — no reutilizar `xml-crypto` sin extensión, ver ADR-0002.
-- **Aislamiento por tenant: no es una CMK por tenant** (esa lectura literal de una versión anterior de este documento se corrigió — ver ADR-0003). Es **una CMK asimétrica compartida por ambiente** más **un Grant `Sign`-only por tenant** sobre esa misma CMK (`packages/signing/src/kms-grants.ts`) — el costo de KMS crece linealmente con el número de CMKs, no con el número de Grants, y dar de alta/revocar un tenant nunca requiere tocar la CMK ni afecta a otros tenants. Límite real documentado en ADR-0003: el Grant aísla por revocación/auditoría, no porque KMS distinga criptográficamente qué tenant hizo la llamada — la aplicación debe seguir usando el `grantToken` correcto por tenant.
+- **Aislamiento por tenant: una CMK por tenant** (ADR-0005, reemplaza ADR-0003 — una versión
+  anterior de este documento decidió una CMK compartida entre tenants con Grants; se corrigió
+  porque eso implicaba que todos los tenants firmarían con la misma identidad criptográfica,
+  contradiciendo el modelo de responsabilidad de §13). El costo de KMS crece linealmente con el
+  número de tenants (~$1-3/mes cada uno) — evaluado como aceptable incluso a cientos de tenants,
+  ver ADR-0005 para la comparación contra alternativas (CloudHSM, AWS Payment Cryptography, ambas
+  descartadas por no ser más baratas a esta escala).
 - Rotación y expiración de certificados: job programado (EventBridge Scheduler) que alerta 30/15/7 días antes del vencimiento del certificado de cada tenant.
 - Credenciales SOL/OSE por tenant en Secrets Manager, con rotación soportada.
 
@@ -249,28 +266,29 @@ Factuya es un sistema con responsabilidad fiscal/legal indirecta (firma document
 - El agente `.claude/agents/dependency-skill-agent.md` es el mecanismo formal para esto: investiga la dependencia, valida la legitimidad del publicador (evitar typosquats/forks no oficiales), y genera una **skill estructurada** en `.claude/skills/deps-<paquete>/` (ver ejemplo real: `deps-xml-crypto`) antes de que la dependencia se use en código.
 - Cada skill de dependencia registra una fecha de "revisar de nuevo antes de" en `docs/dependencies/LEDGER.md`, porque el ecosistema (como se vio con TypeScript 7.0 — ADR-0001) puede cambiar de forma disruptiva entre que se investiga y que se usa.
 
-## 17. Estado de implementación (v0.6)
+## 17. Estado de implementación (v0.7)
 
 El modelo de dominio (§6), el puerto `CountryAdapter` (§4), el adaptador `pe-sunat` (Factura,
-flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva y multi-tenant real
-por API Key, ADR-0004), y `KmsSigner` (§9, ADR-0003) están implementados y **verificados con
-corridas reales** (no mockeadas): SUNAT beta, `apps/api` contra ese mismo pipeline (incluyendo el
-aislamiento real entre tenants), y KMS real (CMK creada, Grant `Sign`-only, firma verificada con
-`crypto.verify()` contra la llave pública real). Ver `docs/adapters/pe-sunat.md`,
-`docs/aws/kms-live-verification.md`, `apps/api/README.md`, y `docs/flows.md` para el detalle
-completo, qué se verificó, y las limitaciones documentadas explícitamente (contador de
-correlativo en memoria en vez de DynamoDB, `TenantRegistry` en memoria del proceso en vez de
-DynamoDB, distinción aceptado-con-observaciones pendiente de verificar contra el catálogo oficial
-de SUNAT).
+flujo síncrono), `apps/api` (servidor HTTP real con documentación interactiva, multi-tenant real
+por API Key —ADR-0004— y alta de tenants con custodia de clave real —ADR-0005/ADR-0006—), y
+`KmsSigner` (§9) están implementados. **Verificado con corridas reales** (no mockeadas): SUNAT
+beta, `apps/api` contra ese mismo pipeline (incluyendo el aislamiento real entre tenants), y la
+firma vía KMS real (CMK creada, firma verificada con `crypto.verify()` contra la llave pública
+real). El import de la clave privada real de un tenant (ADR-0006) está probado con validación
+criptográfica completa contra un `KMSClient` falso, **pendiente la corrida en vivo contra AWS
+real**. Ver `docs/adapters/pe-sunat.md`, `docs/aws/kms-live-verification.md`,
+`apps/api/README.md`, y `docs/flows.md` para el detalle completo, qué se verificó, y las
+limitaciones documentadas explícitamente (contador de correlativo en memoria en vez de DynamoDB,
+`TenantRegistry` en memoria del proceso en vez de DynamoDB, sin soporte de `.pfx`/PKCS#12,
+distinción aceptado-con-observaciones pendiente de verificar contra el catálogo oficial de
+SUNAT).
 
-Pendiente: orquestación real como Step Functions/Lambda (§5, hoy `emitInvoice` es una función en
-proceso que sigue la misma secuencia lógica), persistencia DynamoDB/S3, `POST
-/v1/tenants/{id}/certificate` (para que cada tenant tenga su propia custodia de clave vía
-`KmsSigner` en vez de compartir el certificado efímero de desarrollo), notas de crédito/débito,
-flujo asíncrono (`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
+Pendiente: la corrida en vivo del import de clave (ver arriba), orquestación real como Step
+Functions/Lambda (§5, hoy `emitInvoice` es una función en proceso que sigue la misma secuencia
+lógica), persistencia DynamoDB/S3, notas de crédito/débito, flujo asíncrono
+(`sendSummary`/`getStatus`), y el adaptador `co-factus` (§12).
 
 ---
-*Próximo paso sugerido: infraestructura como código (CDK/Terraform) para Step Functions/Lambda —
-ver `docs/flows.md` para el orden de dependencia completo del roadmap. El usuario IAM
-`factuya-dev` (permisos mínimos) ya existe y puede ampliarse con una policy acotada por cada
-pieza nueva de infraestructura, en vez de una policy amplia de una sola vez.*
+*Próximo paso sugerido: correr la verificación en vivo del import de clave (`docs/aws/kms-live-verification.md`
+Paso 4b) y luego infraestructura como código (CDK/Terraform) para Step Functions/Lambda — ver
+`docs/flows.md` para el orden de dependencia completo del roadmap.*

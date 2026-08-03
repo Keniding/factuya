@@ -1,8 +1,22 @@
 import { describe, expect, it } from "bun:test";
 import type { InvoiceResult, TenantConfig } from "@factuya/shared-types";
 import type { BuiltDocument, CountryAdapter, SignedDocument, SubmissionResult } from "@factuya/core-domain";
+import type { KMSClient } from "@aws-sdk/client-kms";
 import { createApp } from "../src/app";
 import { LocalTenantRegistry } from "../src/tenant-registry";
+import { hashApiKey } from "../src/api-key";
+
+export const TEST_ADMIN_API_KEY = "admin-key-de-prueba";
+const TEST_ADMIN_API_KEY_HASH = hashApiKey(TEST_ADMIN_API_KEY);
+
+/** Fake KMSClient — no debería llamarse en los tests de este archivo (esos van en tenant-certificate.test.ts). */
+function fakeKmsClientThatShouldNotBeCalled(): KMSClient {
+  return {
+    send: async () => {
+      throw new Error("no debería llamarse en este test");
+    },
+  } as unknown as KMSClient;
+}
 
 /** Fake CountryAdapter — mismo patrón que packages/core-domain/test/emit-invoice.test.ts. */
 class FakeAdapter implements CountryAdapter {
@@ -57,9 +71,14 @@ function buildInvoicePayload(): unknown {
 
 function buildTestApp() {
   const registry = new LocalTenantRegistry();
-  registry.register("key-tenant-a", buildTenant("tenant-a"));
-  registry.register("key-tenant-b", buildTenant("tenant-b"));
-  const fetch = createApp({ tenantRegistry: registry, countryAdapter: new FakeAdapter() });
+  void registry.register("key-tenant-a", buildTenant("tenant-a"));
+  void registry.register("key-tenant-b", buildTenant("tenant-b"));
+  const fetch = createApp({
+    tenantRegistry: registry,
+    countryAdapter: new FakeAdapter(),
+    kmsClient: fakeKmsClientThatShouldNotBeCalled(),
+    adminApiKeyHash: TEST_ADMIN_API_KEY_HASH,
+  });
   return fetch;
 }
 
